@@ -1,37 +1,54 @@
-import { useEffect, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import {
-  Search, RefreshCw, Download, ChevronUp, ChevronDown,
-  Trash2, RotateCcw, ExternalLink, FileText
-} from 'lucide-react'
-import { listJobs, retryJob, deleteJob, triggerExport } from '../lib/api'
-import { StatusBadge, ProgressBar, Spinner, formatBytes } from '../components/ui'
-import { useSSEProgress } from '../hooks/useSSEProgress'
-import { useJobStore } from '../store/jobStore'
-import { formatDistanceToNow } from 'date-fns'
-import type { JobStatus, ProcessingJobSummary } from '../types'
+  Search,
+  RefreshCw,
+  Download,
+  ChevronUp,
+  ChevronDown,
+  Trash2,
+  RotateCcw,
+  ExternalLink,
+  FileText,
+} from "lucide-react";
+import { listJobs, retryJob, deleteJob, triggerExport } from "../lib/api";
+import {
+  StatusBadge,
+  ProgressBar,
+  Spinner,
+  formatBytes,
+} from "../components/ui";
+import { useSSEProgress } from "../hooks/useSSEProgress";
+import { useJobStore } from "../store/jobStore";
+import { formatDistanceToNow } from "date-fns";
+import type { JobStatus, ProcessingJobSummary } from "../types";
 
 const STATUS_OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: 'All statuses' },
-  { value: 'queued', label: 'Queued' },
-  { value: 'processing', label: 'Processing' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'failed', label: 'Failed' },
-  { value: 'finalized', label: 'Finalized' },
-]
+  { value: "", label: "All statuses" },
+  { value: "queued", label: "Queued" },
+  { value: "processing", label: "Processing" },
+  { value: "completed", label: "Completed" },
+  { value: "failed", label: "Failed" },
+  { value: "finalized", label: "Finalized" },
+];
 
 // ── Live row: subscribes to SSE for a single job ──────────────────────────────
-function LiveJobRow({ job, onNavigate, onRetry, onDelete }: {
-  job: ProcessingJobSummary
-  onNavigate: (id: string) => void
-  onRetry: (id: string) => void
-  onDelete: (id: string) => void
+function LiveJobRow({
+  job,
+  onNavigate,
+  onRetry,
+  onDelete,
+}: {
+  job: ProcessingJobSummary;
+  onNavigate: (id: string) => void;
+  onRetry: (id: string) => void;
+  onDelete: (id: string) => void;
 }) {
-  const liveProgress = useJobStore(s => s.liveProgress[job.id])
-  const updateLiveProgress = useJobStore(s => s.updateLiveProgress)
-  const updateJobStatus = useJobStore(s => s.updateJobStatus)
+  const liveProgress = useJobStore((s) => s.liveProgress[job.id]);
+  const updateLiveProgress = useJobStore((s) => s.updateLiveProgress);
+  const updateJobStatus = useJobStore((s) => s.updateJobStatus);
 
-  const isActive = job.status === 'queued' || job.status === 'processing'
+  const isActive = job.status === "queued" || job.status === "processing";
 
   useSSEProgress({
     jobId: job.id,
@@ -42,56 +59,78 @@ function LiveJobRow({ job, onNavigate, onRetry, onDelete }: {
         status: e.status,
         message: e.message,
         event_type: e.event_type,
-      })
-      if (['completed', 'failed', 'finalized'].includes(e.status)) {
-        updateJobStatus(job.id, e.status as JobStatus, e.progress)
+      });
+      if (["completed", "failed", "finalized"].includes(e.status)) {
+        updateJobStatus(job.id, e.status as JobStatus, e.progress);
       }
     },
-  })
+  });
 
-  const progress = liveProgress?.progress ?? job.progress
-  const status = (liveProgress?.status as JobStatus) ?? job.status
-  const message = liveProgress?.message
+  const progress = liveProgress?.progress ?? job.progress;
+  const status = (liveProgress?.status as JobStatus) ?? job.status;
+  const message = liveProgress?.message;
 
   return (
     <tr>
       <td>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <FileText size={13} color="var(--text-3)" />
           <div style={{ minWidth: 0 }}>
             <div
               className="truncate"
-              style={{ fontFamily: 'var(--font-mono)', fontSize: 12, maxWidth: 220, cursor: 'pointer', color: 'var(--text)' }}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                maxWidth: 220,
+                cursor: "pointer",
+                color: "var(--text)",
+              }}
               onClick={() => onNavigate(job.id)}
             >
-              {job.document?.original_filename ?? '—'}
+              {job.document?.original_filename ?? "—"}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>
-              {job.document ? formatBytes(job.document.file_size) : ''} · {job.document?.file_type}
+            <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>
+              {job.document ? formatBytes(job.document.file_size) : ""} ·{" "}
+              {job.document?.file_type}
             </div>
           </div>
         </div>
       </td>
 
-      <td><StatusBadge status={status} /></td>
+      <td>
+        <StatusBadge status={status} />
+      </td>
 
       <td style={{ minWidth: 160 }}>
         <ProgressBar value={progress} status={status} showLabel />
-        {message && status === 'processing' && (
-          <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>
+        {message && status === "processing" && (
+          <div
+            style={{
+              fontSize: 10,
+              color: "var(--text-3)",
+              marginTop: 3,
+              fontFamily: "var(--font-mono)",
+            }}
+          >
             {message}
           </div>
         )}
       </td>
 
       <td>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-3)' }}>
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            color: "var(--text-3)",
+          }}
+        >
           {formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}
         </span>
       </td>
 
       <td>
-        <div style={{ display: 'flex', gap: 4 }}>
+        <div style={{ display: "flex", gap: 4 }}>
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => onNavigate(job.id)}
@@ -99,7 +138,7 @@ function LiveJobRow({ job, onNavigate, onRetry, onDelete }: {
           >
             <ExternalLink size={11} />
           </button>
-          {status === 'failed' && job.retry_count < 3 && (
+          {status === "failed" && job.retry_count < 3 && (
             <button
               className="btn btn-ghost btn-sm"
               onClick={() => onRetry(job.id)}
@@ -118,73 +157,140 @@ function LiveJobRow({ job, onNavigate, onRetry, onDelete }: {
         </div>
       </td>
     </tr>
-  )
+  );
 }
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const navigate = useNavigate()
-  const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const navigate = useNavigate();
+  const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const {
-    jobs, total, loading, filters,
-    setJobs, setLoading, setFilters, removeJob,
-  } = useJobStore()
+    jobs,
+    total,
+    loading,
+    filters,
+    setJobs,
+    setLoading,
+    setFilters,
+    removeJob,
+  } = useJobStore();
 
   const fetchJobs = useCallback(async () => {
-    setLoading(true)
+    setLoading(true);
     try {
-      const res = await listJobs(filters)
-      setJobs(res.items, res.total)
+      const res = await listJobs(filters);
+      setJobs(res.items, res.total);
     } catch {
-      setJobs([], 0)
+      setJobs([], 0);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [filters, setJobs, setLoading])
+  }, [filters, setJobs, setLoading]);
 
   useEffect(() => {
-    fetchJobs()
-  }, [fetchJobs])
+    fetchJobs();
+  }, [fetchJobs]);
 
   // Auto-refresh every 8s for active jobs
   useEffect(() => {
-    const timer = setInterval(fetchJobs, 8000)
-    return () => clearInterval(timer)
-  }, [fetchJobs])
+    const timer = setInterval(fetchJobs, 8000);
+    return () => clearInterval(timer);
+  }, [fetchJobs]);
 
   const handleSearch = (value: string) => {
-    if (searchRef.current) clearTimeout(searchRef.current)
-    searchRef.current = setTimeout(() => setFilters({ search: value, page: 1 }), 300)
-  }
+    if (searchRef.current) clearTimeout(searchRef.current);
+    searchRef.current = setTimeout(
+      () => setFilters({ search: value, page: 1 }),
+      300,
+    );
+  };
 
   const handleSort = (col: string) => {
     if (filters.sort_by === col) {
-      setFilters({ sort_dir: filters.sort_dir === 'asc' ? 'desc' : 'asc' })
+      setFilters({ sort_dir: filters.sort_dir === "asc" ? "desc" : "asc" });
     } else {
-      setFilters({ sort_by: col, sort_dir: 'desc' })
+      setFilters({ sort_by: col, sort_dir: "desc" });
     }
-  }
+  };
 
   const handleRetry = async (id: string) => {
-    await retryJob(id)
-    fetchJobs()
-  }
+    await retryJob(id);
+    fetchJobs();
+  };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this job and its document?')) return
-    await deleteJob(id)
-    removeJob(id)
-  }
+    if (!confirm("Delete this job and its document?")) return;
+    await deleteJob(id);
+    removeJob(id);
+  };
 
-  const totalPages = Math.ceil(total / filters.page_size) || 1
+  const totalPages = Math.ceil(total / filters.page_size) || 1;
+  const pageFinalizedIds = jobs
+    .filter((j) => j.status === "finalized")
+    .map((j) => j.id);
+  const pageCompletedOrFinalizedIds = jobs
+    .filter((j) => j.status === "completed" || j.status === "finalized")
+    .map((j) => j.id);
+  const exportSections = [
+    {
+      title: "All Jobs",
+      items: [
+        {
+          label: "Finalized only (.json)",
+          run: () => triggerExport("json"),
+        },
+        {
+          label: "Finalized only (.csv)",
+          run: () => triggerExport("csv"),
+        },
+        {
+          label: "Completed + finalized (.json)",
+          run: () => triggerExport("json", { includeCompleted: true }),
+        },
+        {
+          label: "Completed + finalized (.csv)",
+          run: () => triggerExport("csv", { includeCompleted: true }),
+        },
+      ],
+    },
+    {
+      title: "Current Page",
+      items: [
+        {
+          label: `Finalized only (.json) [${pageFinalizedIds.length}]`,
+          run: () => triggerExport("json", { jobIds: pageFinalizedIds }),
+        },
+        {
+          label: `Finalized only (.csv) [${pageFinalizedIds.length}]`,
+          run: () => triggerExport("csv", { jobIds: pageFinalizedIds }),
+        },
+        {
+          label: `Completed + finalized (.json) [${pageCompletedOrFinalizedIds.length}]`,
+          run: () =>
+            triggerExport("json", {
+              jobIds: pageCompletedOrFinalizedIds,
+            }),
+        },
+        {
+          label: `Completed + finalized (.csv) [${pageCompletedOrFinalizedIds.length}]`,
+          run: () =>
+            triggerExport("csv", {
+              jobIds: pageCompletedOrFinalizedIds,
+            }),
+        },
+      ],
+    },
+  ];
 
   const SortIcon = ({ col }: { col: string }) => {
-    if (filters.sort_by !== col) return null
-    return filters.sort_dir === 'asc'
-      ? <ChevronUp size={11} />
-      : <ChevronDown size={11} />
-  }
+    if (filters.sort_by !== col) return null;
+    return filters.sort_dir === "asc" ? (
+      <ChevronUp size={11} />
+    ) : (
+      <ChevronDown size={11} />
+    );
+  };
 
   return (
     <div className="fade-in">
@@ -192,40 +298,87 @@ export default function DashboardPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Jobs</h1>
-          <p className="page-subtitle">{total} document{total !== 1 ? 's' : ''} in system</p>
+          <p className="page-subtitle">
+            {total} document{total !== 1 ? "s" : ""} in system
+          </p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-ghost btn-sm" onClick={fetchJobs} title="Refresh">
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={fetchJobs}
+            title="Refresh"
+          >
             {loading ? <Spinner size={12} /> : <RefreshCw size={12} />}
           </button>
-          <div style={{ position: 'relative' }}>
-            <button className="btn btn-ghost btn-sm" onClick={() => {
-              // simple dropdown-less export
-              const menu = document.getElementById('export-menu')
-              if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none'
-            }}>
+          <div style={{ position: "relative" }}>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                // simple dropdown-less export
+                const menu = document.getElementById("export-menu");
+                if (menu)
+                  menu.style.display =
+                    menu.style.display === "none" ? "block" : "none";
+              }}
+            >
               <Download size={12} /> Export
             </button>
-            <div id="export-menu" style={{
-              display: 'none', position: 'absolute', right: 0, top: '100%', marginTop: 4,
-              background: 'var(--bg-2)', border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-md)', minWidth: 130, zIndex: 10,
-            }}>
-              {['json', 'csv'].map(fmt => (
-                <button
-                  key={fmt}
-                  style={{
-                    display: 'block', width: '100%', background: 'none', border: 'none',
-                    padding: '8px 14px', textAlign: 'left', cursor: 'pointer',
-                    fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-2)',
-                  }}
-                  onClick={() => {
-                    triggerExport(fmt as 'json' | 'csv')
-                    document.getElementById('export-menu')!.style.display = 'none'
-                  }}
-                >
-                  Export as .{fmt.toUpperCase()}
-                </button>
+            <div
+              id="export-menu"
+              style={{
+                display: "none",
+                position: "absolute",
+                right: 0,
+                top: "100%",
+                marginTop: 4,
+                background: "var(--bg-2)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-md)",
+                minWidth: 260,
+                zIndex: 10,
+              }}
+            >
+              {exportSections.map((section, sectionIndex) => (
+                <div key={section.title}>
+                  <div
+                    style={{
+                      padding: "8px 14px 6px",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 10,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                      color: "var(--text-3)",
+                      borderTop:
+                        sectionIndex > 0 ? "1px solid var(--border)" : "none",
+                    }}
+                  >
+                    {section.title}
+                  </div>
+                  {section.items.map((item) => (
+                    <button
+                      key={item.label}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        background: "none",
+                        border: "none",
+                        padding: "8px 14px",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 12,
+                        color: "var(--text-2)",
+                      }}
+                      onClick={() => {
+                        item.run();
+                        document.getElementById("export-menu")!.style.display =
+                          "none";
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
               ))}
             </div>
           </div>
@@ -233,38 +386,53 @@ export default function DashboardPage() {
       </div>
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: '1 1 220px', minWidth: 160 }}>
-          <Search size={12} style={{
-            position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
-            color: 'var(--text-3)', pointerEvents: 'none',
-          }} />
+      <div
+        style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}
+      >
+        <div style={{ position: "relative", flex: "1 1 220px", minWidth: 160 }}>
+          <Search
+            size={12}
+            style={{
+              position: "absolute",
+              left: 10,
+              top: "50%",
+              transform: "translateY(-50%)",
+              color: "var(--text-3)",
+              pointerEvents: "none",
+            }}
+          />
           <input
             className="input"
             placeholder="Search by filename..."
             style={{ paddingLeft: 30 }}
             defaultValue={filters.search}
-            onChange={e => handleSearch(e.target.value)}
+            onChange={(e) => handleSearch(e.target.value)}
           />
         </div>
         <select
           className="input"
-          style={{ flex: '0 0 160px' }}
+          style={{ flex: "0 0 160px" }}
           value={filters.status}
-          onChange={e => setFilters({ status: e.target.value as JobStatus | '' })}
+          onChange={(e) =>
+            setFilters({ status: e.target.value as JobStatus | "" })
+          }
         >
-          {STATUS_OPTIONS.map(o => (
-            <option key={o.value} value={o.value}>{o.label}</option>
+          {STATUS_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
           ))}
         </select>
         <select
           className="input"
-          style={{ flex: '0 0 120px' }}
+          style={{ flex: "0 0 120px" }}
           value={filters.page_size}
-          onChange={e => setFilters({ page_size: Number(e.target.value) })}
+          onChange={(e) => setFilters({ page_size: Number(e.target.value) })}
         >
-          {[10, 20, 50].map(n => (
-            <option key={n} value={n}>{n} / page</option>
+          {[10, 20, 50].map((n) => (
+            <option key={n} value={n}>
+              {n} / page
+            </option>
           ))}
         </select>
       </div>
@@ -275,14 +443,20 @@ export default function DashboardPage() {
           <table>
             <thead>
               <tr>
-                <th className="sortable" onClick={() => handleSort('created_at')}>
+                <th
+                  className="sortable"
+                  onClick={() => handleSort("created_at")}
+                >
                   Document <SortIcon col="created_at" />
                 </th>
-                <th className="sortable" onClick={() => handleSort('status')}>
+                <th className="sortable" onClick={() => handleSort("status")}>
                   Status <SortIcon col="status" />
                 </th>
                 <th>Progress</th>
-                <th className="sortable" onClick={() => handleSort('created_at')}>
+                <th
+                  className="sortable"
+                  onClick={() => handleSort("created_at")}
+                >
                   Created <SortIcon col="created_at" />
                 </th>
                 <th>Actions</th>
@@ -291,7 +465,10 @@ export default function DashboardPage() {
             <tbody>
               {loading && jobs.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: 'center', padding: '40px 0' }}>
+                  <td
+                    colSpan={5}
+                    style={{ textAlign: "center", padding: "40px 0" }}
+                  >
                     <Spinner size={18} />
                   </td>
                 </tr>
@@ -304,26 +481,40 @@ export default function DashboardPage() {
                     </div>
                   </td>
                 </tr>
-              ) : jobs.map(job => (
-                <LiveJobRow
-                  key={job.id}
-                  job={job}
-                  onNavigate={id => navigate(`/jobs/${id}`)}
-                  onRetry={handleRetry}
-                  onDelete={handleDelete}
-                />
-              ))}
+              ) : (
+                jobs.map((job) => (
+                  <LiveJobRow
+                    key={job.id}
+                    job={job}
+                    onNavigate={(id) => navigate(`/jobs/${id}`)}
+                    onRetry={handleRetry}
+                    onDelete={handleDelete}
+                  />
+                ))
+              )}
             </tbody>
           </table>
         </div>
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '12px 16px', borderTop: '1px solid var(--border)',
-          }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-3)', flex: 1 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "12px 16px",
+              borderTop: "1px solid var(--border)",
+            }}
+          >
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--text-3)",
+                flex: 1,
+              }}
+            >
               Page {filters.page} of {totalPages} · {total} total
             </span>
             <button
@@ -344,5 +535,5 @@ export default function DashboardPage() {
         )}
       </div>
     </div>
-  )
+  );
 }

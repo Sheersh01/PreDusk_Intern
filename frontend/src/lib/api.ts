@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from "axios";
 import type {
   BulkUploadResponse,
   JobListResponse,
@@ -6,30 +6,34 @@ import type {
   ProcessingJobSummary,
   ListFilters,
   ExtractedData,
-} from '../types';
+} from "../types";
 
-const BASE = (import.meta.env.VITE_API_URL || '') + '/api/v1';
+const BASE = (import.meta.env.VITE_API_URL || "") + "/api/v1";
 
 const client = axios.create({ baseURL: BASE });
 
 // ── Upload ──────────────────────────────────────────────────────────────────
 
-export async function uploadDocuments(files: File[]): Promise<BulkUploadResponse> {
+export async function uploadDocuments(
+  files: File[],
+): Promise<BulkUploadResponse> {
   const form = new FormData();
-  files.forEach(f => form.append('files', f));
-  const res = await client.post<BulkUploadResponse>('/upload', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+  files.forEach((f) => form.append("files", f));
+  const res = await client.post<BulkUploadResponse>("/upload", form, {
+    headers: { "Content-Type": "multipart/form-data" },
   });
   return res.data;
 }
 
 // ── List ─────────────────────────────────────────────────────────────────────
 
-export async function listJobs(filters: Partial<ListFilters> = {}): Promise<JobListResponse> {
+export async function listJobs(
+  filters: Partial<ListFilters> = {},
+): Promise<JobListResponse> {
   const params: Record<string, unknown> = { ...filters };
   if (!params.status) delete params.status;
   if (!params.search) delete params.search;
-  const res = await client.get<JobListResponse>('/jobs', { params });
+  const res = await client.get<JobListResponse>("/jobs", { params });
   return res.data;
 }
 
@@ -42,21 +46,34 @@ export async function getJob(jobId: string): Promise<ProcessingJob> {
 
 // ── Polling status ────────────────────────────────────────────────────────────
 
-export async function pollJobStatus(jobId: string): Promise<{ status: string; progress: number; event_type: string; message: string }> {
+export async function pollJobStatus(
+  jobId: string,
+): Promise<{
+  status: string;
+  progress: number;
+  event_type: string;
+  message: string;
+}> {
   const res = await client.get(`/jobs/${jobId}/status`);
   return res.data;
 }
 
 // ── Review & Finalize ─────────────────────────────────────────────────────────
 
-export async function updateReview(jobId: string, reviewedData: ExtractedData): Promise<ProcessingJob> {
+export async function updateReview(
+  jobId: string,
+  reviewedData: ExtractedData,
+): Promise<ProcessingJob> {
   const res = await client.patch<ProcessingJob>(`/jobs/${jobId}/review`, {
     reviewed_data: reviewedData,
   });
   return res.data;
 }
 
-export async function finalizeJob(jobId: string, reviewedData?: ExtractedData): Promise<ProcessingJob> {
+export async function finalizeJob(
+  jobId: string,
+  reviewedData?: ExtractedData,
+): Promise<ProcessingJob> {
   const res = await client.post<ProcessingJob>(`/jobs/${jobId}/finalize`, {
     reviewed_data: reviewedData ?? null,
   });
@@ -78,15 +95,34 @@ export async function deleteJob(jobId: string): Promise<void> {
 
 // ── Export ───────────────────────────────────────────────────────────────────
 
-export function exportUrl(format: 'json' | 'csv', jobIds?: string[]): string {
-  const ids = jobIds?.join(',');
-  const query = ids ? `?job_ids=${ids}` : '';
-  return `${BASE}/jobs/export/${format}${query}`;
+type ExportOptions = {
+  jobIds?: string[];
+  includeCompleted?: boolean;
+};
+
+export function exportUrl(
+  format: "json" | "csv",
+  options?: ExportOptions,
+): string {
+  const params = new URLSearchParams();
+
+  if (options?.jobIds?.length) {
+    params.set("job_ids", options.jobIds.join(","));
+  }
+  if (options?.includeCompleted) {
+    params.set("include_completed", "true");
+  }
+
+  const query = params.toString();
+  return `${BASE}/jobs/export/${format}${query ? `?${query}` : ""}`;
 }
 
-export async function triggerExport(format: 'json' | 'csv', jobIds?: string[]) {
-  const url = exportUrl(format, jobIds);
-  const a = document.createElement('a');
+export async function triggerExport(
+  format: "json" | "csv",
+  options?: ExportOptions,
+) {
+  const url = exportUrl(format, options);
+  const a = document.createElement("a");
   a.href = url;
   a.download = `docflow_export.${format}`;
   document.body.appendChild(a);
