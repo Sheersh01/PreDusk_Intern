@@ -427,13 +427,13 @@ export default function DetailPage() {
             <>
               <button
                 className="btn btn-ghost btn-sm"
-                onClick={() => triggerExport("json", [job.id])}
+                onClick={() => triggerExport("json", [job.id] as any)}
               >
                 <Download size={12} /> JSON
               </button>
               <button
                 className="btn btn-ghost btn-sm"
-                onClick={() => triggerExport("csv", [job.id])}
+                onClick={() => triggerExport("csv", [job.id] as any)}
               >
                 <Download size={12} /> CSV
               </button>
