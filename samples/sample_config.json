@@ -1,0 +1,37 @@
+{
+  "project": "DocFlow",
+  "version": "1.0.0",
+  "description": "Async document processing workflow system",
+  "architecture": {
+    "frontend": "React + Vite + TypeScript",
+    "backend": "FastAPI (Python)",
+    "database": "PostgreSQL",
+    "queue": "Celery + Redis",
+    "messaging": "Redis Pub/Sub"
+  },
+  "processing_stages": [
+    "document_received",
+    "parsing_started",
+    "parsing_completed",
+    "extraction_started",
+    "extraction_completed",
+    "final_result_stored",
+    "job_completed"
+  ],
+  "supported_formats": [".pdf", ".txt", ".docx", ".csv", ".json", ".md"],
+  "features": [
+    "Multi-file upload",
+    "Real-time SSE progress streaming",
+    "Background Celery workers",
+    "Redis Pub/Sub event pipeline",
+    "Review and edit extracted fields",
+    "Finalize workflow",
+    "Export as JSON and CSV",
+    "Job retry with idempotent handling"
+  ],
+  "config": {
+    "max_file_size_mb": 50,
+    "max_retries": 3,
+    "worker_concurrency": 4
+  }
+}

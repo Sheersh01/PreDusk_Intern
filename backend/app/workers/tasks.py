@@ -1,0 +1,280 @@
+"""
+Document processing Celery tasks.
+
+Each document goes through a multi-stage pipeline:
+  document_received → parsing_started → parsing_completed
+  → extraction_started → extraction_completed
+  → final_result_stored → job_completed
+"""
+
+import time
+import json
+import os
+import re
+import hashlib
+from datetime import datetime
+from pathlib import Path
+
+import sqlalchemy
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
+
+from app.workers.celery_app import celery_app
+from app.core.config import settings
+from app.core.redis_pubsub import publish_progress_sync
+from app.models.document import ProcessingJob, JobStatus, JobEvent, Document
+
+# Sync DB engine for Celery workers
+sync_engine = create_engine(
+    settings.DATABASE_URL.replace("+asyncpg", "+psycopg2"),
+    pool_pre_ping=True,
+)
+SyncSession = sessionmaker(bind=sync_engine)
+
+
+def _get_job_and_doc(db: Session, job_id: str):
+    job = db.query(ProcessingJob).filter(ProcessingJob.id == job_id).first()
+    if not job:
+        raise ValueError(f"Job {job_id} not found")
+    doc = db.query(Document).filter(Document.id == job.document_id).first()
+    return job, doc
+
+
+def _emit(db: Session, job: ProcessingJob, event_type: str, message: str, progress: int, status: str):
+    """Persist event to DB and publish via Redis Pub/Sub."""
+    event = JobEvent(
+        job_id=job.id,
+        event_type=event_type,
+        message=message,
+        progress=progress,
+    )
+    db.add(event)
+    job.current_stage = event_type
+    job.progress = progress
+    job.updated_at = datetime.utcnow()
+    db.commit()
+
+    publish_progress_sync(
+        job_id=str(job.id),
+        event_type=event_type,
+        message=message,
+        progress=progress,
+        status=status,
+    )
+
+
+# ─── Text / Content Extraction Helpers ───────────────────────────────────────
+
+def _extract_text_from_file(file_path: str, file_type: str) -> str:
+    """Extract raw text from file. Supports PDF, TXT, CSV, JSON, MD."""
+    path = Path(file_path)
+    if not path.exists():
+        return f"[File not found at {file_path}]"
+
+    ext = file_type.lower()
+
+    try:
+        if ext == ".pdf":
+            try:
+                import fitz  # PyMuPDF
+                doc = fitz.open(file_path)
+                text = "\n".join(page.get_text() for page in doc)
+                doc.close()
+                return text[:5000] if text else "[Empty PDF]"
+            except Exception:
+                return "[PDF parsing failed - binary content]"
+
+        elif ext in (".txt", ".md"):
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                return f.read()[:5000]
+
+        elif ext == ".csv":
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+            lines = content.strip().split("\n")
+            preview = "\n".join(lines[:20])
+            return f"CSV file with {len(lines)} rows.\nPreview:\n{preview}"
+
+        elif ext == ".json":
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return json.dumps(data, indent=2)[:3000]
+
+        elif ext == ".docx":
+            return "[DOCX parsing requires python-docx - mocked content]"
+
+        else:
+            return f"[Unsupported file type: {ext}]"
+
+    except Exception as e:
+        return f"[Error reading file: {str(e)}]"
+
+
+def _extract_structured_data(raw_text: str, filename: str, file_size: int, file_type: str) -> dict:
+    """
+    Extract structured fields from raw text.
+    In production this could call an LLM or an OCR pipeline.
+    Here we do a smart heuristic extraction.
+    """
+    words = re.findall(r"\b\w+\b", raw_text.lower())
+    word_freq: dict[str, int] = {}
+    stopwords = {"the", "a", "an", "and", "or", "in", "on", "at", "is", "it",
+                 "to", "of", "for", "with", "this", "that", "as", "be", "was", "are"}
+    for w in words:
+        if len(w) > 3 and w not in stopwords:
+            word_freq[w] = word_freq.get(w, 0) + 1
+
+    top_keywords = sorted(word_freq, key=lambda k: word_freq[k], reverse=True)[:10]
+
+    # Derive title
+    lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
+    title = lines[0][:80] if lines else filename
+
+    # Summary: first 3 non-empty lines (or fewer)
+    summary_lines = lines[:3] if len(lines) >= 3 else lines
+    summary = " ".join(summary_lines)[:300]
+
+    # Category heuristic
+    category = _infer_category(top_keywords, file_type)
+
+    # Word / char stats
+    word_count = len(words)
+    char_count = len(raw_text)
+
+    # Checksum for idempotency
+    checksum = hashlib.md5(raw_text.encode()).hexdigest()
+
+    return {
+        "title": title,
+        "category": category,
+        "summary": summary,
+        "keywords": top_keywords,
+        "word_count": word_count,
+        "char_count": char_count,
+        "file_metadata": {
+            "filename": filename,
+            "file_type": file_type,
+            "file_size_bytes": file_size,
+            "file_size_kb": round(file_size / 1024, 2),
+        },
+        "content_checksum": checksum,
+        "extraction_timestamp": datetime.utcnow().isoformat(),
+        "processing_version": "1.0",
+    }
+
+
+def _infer_category(keywords: list[str], file_type: str) -> str:
+    category_map = {
+        "technical": {"code", "function", "class", "api", "data", "system", "software", "error",
+                      "server", "database", "python", "java", "javascript"},
+        "financial": {"revenue", "profit", "loss", "budget", "cost", "price", "market",
+                      "quarter", "annual", "investment", "financial", "earnings"},
+        "legal": {"agreement", "contract", "party", "parties", "clause", "terms", "liability",
+                  "pursuant", "whereas", "obligations", "rights"},
+        "report": {"report", "analysis", "results", "findings", "conclusion", "summary",
+                   "overview", "assessment", "review", "evaluation"},
+        "data": {"csv", "column", "rows", "values", "fields", "records", "dataset"},
+    }
+
+    if file_type == ".csv":
+        return "data"
+
+    scores = {cat: 0 for cat in category_map}
+    for kw in keywords:
+        for cat, terms in category_map.items():
+            if kw in terms:
+                scores[cat] += 1
+
+    best = max(scores, key=lambda c: scores[c])
+    return best if scores[best] > 0 else "general"
+
+
+# ─── Main Celery Task ─────────────────────────────────────────────────────────
+
+@celery_app.task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=10,
+    name="app.workers.tasks.process_document",
+)
+def process_document(self, job_id: str):
+    """
+    Full document processing pipeline.
+    Published progress events at each stage via Redis Pub/Sub.
+    """
+    db: Session = SyncSession()
+
+    try:
+        job, doc = _get_job_and_doc(db, job_id)
+
+        # Mark as started
+        job.status = JobStatus.PROCESSING
+        job.started_at = datetime.utcnow()
+        job.celery_task_id = self.request.id
+        db.commit()
+
+        # ── Stage 1: Document received ──────────────────────────────────────
+        _emit(db, job, "document_received", "Document received and queued for processing", 5, "processing")
+        time.sleep(0.5)
+
+        # ── Stage 2: Parsing started ────────────────────────────────────────
+        _emit(db, job, "parsing_started", f"Parsing document: {doc.original_filename}", 15, "processing")
+        time.sleep(0.8)
+
+        # Actual text extraction
+        raw_text = _extract_text_from_file(doc.file_path, doc.file_type)
+
+        # ── Stage 3: Parsing completed ──────────────────────────────────────
+        _emit(db, job, "parsing_completed", f"Parsed {len(raw_text)} characters from document", 35, "processing")
+        time.sleep(0.6)
+
+        # ── Stage 4: Extraction started ─────────────────────────────────────
+        _emit(db, job, "extraction_started", "Extracting structured fields and metadata", 50, "processing")
+        time.sleep(1.0)
+
+        # Actual extraction
+        structured = _extract_structured_data(
+            raw_text=raw_text,
+            filename=doc.original_filename,
+            file_size=doc.file_size,
+            file_type=doc.file_type,
+        )
+
+        # ── Stage 5: Extraction completed ───────────────────────────────────
+        _emit(db, job, "extraction_completed",
+              f"Extracted {len(structured)} fields | Category: {structured.get('category', 'unknown')}",
+              75, "processing")
+        time.sleep(0.5)
+
+        # ── Stage 6: Store result ────────────────────────────────────────────
+        _emit(db, job, "final_result_stored", "Persisting extracted data to database", 90, "processing")
+        job.extracted_data = structured
+        job.reviewed_data = structured.copy()  # pre-fill reviewed with extracted
+        db.commit()
+        time.sleep(0.3)
+
+        # ── Stage 7: Completed ───────────────────────────────────────────────
+        job.status = JobStatus.COMPLETED
+        job.progress = 100
+        job.completed_at = datetime.utcnow()
+        db.commit()
+        _emit(db, job, "job_completed", "Processing complete. Ready for review.", 100, "completed")
+
+    except Exception as exc:
+        db.rollback()
+
+        try:
+            job, doc = _get_job_and_doc(db, job_id)
+            job.status = JobStatus.FAILED
+            job.error_message = str(exc)
+            job.updated_at = datetime.utcnow()
+            db.commit()
+            _emit(db, job, "job_failed", f"Processing failed: {str(exc)}", job.progress, "failed")
+        except Exception:
+            pass
+
+        # Let Celery handle retries
+        raise self.retry(exc=exc, countdown=2 ** self.request.retries * 5)
+
+    finally:
+        db.close()

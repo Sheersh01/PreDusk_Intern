@@ -1,0 +1,11 @@
+transaction_id,date,vendor,category,amount,status
+TXN001,2024-01-15,AWS,infrastructure,4820.50,completed
+TXN002,2024-01-16,Stripe,payment_processing,250.00,completed
+TXN003,2024-01-17,GitHub,development_tools,84.00,completed
+TXN004,2024-01-18,DataDog,monitoring,320.00,pending
+TXN005,2024-01-19,Vercel,hosting,60.00,completed
+TXN006,2024-01-20,Linear,project_management,48.00,completed
+TXN007,2024-01-21,Figma,design_tools,36.00,completed
+TXN008,2024-01-22,OpenAI,ai_services,1250.75,completed
+TXN009,2024-01-23,Twilio,communications,180.25,pending
+TXN010,2024-01-24,PlanetScale,database,120.00,completed

@@ -1,0 +1,39 @@
+DocFlow Test Document
+=====================
+
+This is a sample text document for testing the DocFlow async processing pipeline.
+
+## Overview
+
+DocFlow is an async document processing system built with FastAPI, Celery, Redis,
+and PostgreSQL. It supports end-to-end document workflows including upload,
+background processing, field extraction, review, finalization, and export.
+
+## Key Features
+
+- Multi-stage async processing with real-time progress tracking
+- Redis Pub/Sub for live event streaming to the frontend
+- Celery workers for background task execution
+- PostgreSQL for durable storage of documents and jobs
+- SSE-based progress streaming from backend to React frontend
+
+## Technical Architecture
+
+The system uses a clean layered architecture:
+  - API routes handle HTTP request/response only
+  - Service layer contains all business logic
+  - Worker layer handles asynchronous processing
+  - Models define the database schema
+
+## Processing Pipeline
+
+Each document goes through these stages:
+  1. document_received
+  2. parsing_started
+  3. parsing_completed
+  4. extraction_started
+  5. extraction_completed
+  6. final_result_stored
+  7. job_completed
+
+This design ensures full observability and retry capability at every stage.

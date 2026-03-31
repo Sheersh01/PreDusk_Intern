@@ -1,0 +1,3 @@
+job_id,document_name,status,title,category,summary,keywords,word_count,file_size_bytes,file_type,processed_at,finalized,retry_count
+3a8f21bc-1234-5678-abcd-ef0123456789,sample_document.txt,finalized,DocFlow Test Document,technical,"DocFlow is an async document processing system built with FastAPI, Celery, Redis, and PostgreSQL.","docflow, async, processing, celery, redis, pipeline, workers, stages, system, backend",142,1428,.txt,2024-06-01T14:32:11.823Z,True,0
+7c9d44ef-abcd-ef12-3456-789012345678,sample_data.csv,finalized,"transaction_id,date,vendor,category,amount,status",data,"CSV file with 11 rows.","completed, payment, hosting, database, monitoring, design, development, infrastructure, project, communications",67,512,.csv,2024-06-01T14:33:02.112Z,True,0

@@ -1,0 +1,32 @@
+[
+  {
+    "job_id": "3a8f21bc-1234-5678-abcd-ef0123456789",
+    "document_name": "sample_document.txt",
+    "status": "finalized",
+    "title": "DocFlow Test Document",
+    "category": "technical",
+    "summary": "DocFlow is an async document processing system built with FastAPI, Celery, Redis, and PostgreSQL. It supports end-to-end document workflows including upload, background processing, field extraction, review, finalization, and export.",
+    "keywords": ["docflow", "async", "processing", "celery", "redis", "pipeline", "workers", "stages", "system", "backend"],
+    "word_count": 142,
+    "file_size_bytes": 1428,
+    "file_type": ".txt",
+    "processed_at": "2024-06-01T14:32:11.823Z",
+    "finalized": true,
+    "retry_count": 0
+  },
+  {
+    "job_id": "7c9d44ef-abcd-ef12-3456-789012345678",
+    "document_name": "sample_data.csv",
+    "status": "finalized",
+    "title": "transaction_id,date,vendor,category,amount,status",
+    "category": "data",
+    "summary": "CSV file with 11 rows. Preview: transaction_id,date,vendor,category,amount,status TXN001,2024-01-15,AWS,infrastructure,4820.50,completed",
+    "keywords": ["completed", "payment", "hosting", "database", "monitoring", "design", "development", "infrastructure", "project", "communications"],
+    "word_count": 67,
+    "file_size_bytes": 512,
+    "file_type": ".csv",
+    "processed_at": "2024-06-01T14:33:02.112Z",
+    "finalized": true,
+    "retry_count": 0
+  }
+]
