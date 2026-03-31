@@ -36,6 +36,7 @@ class Document(Base):
     filename = Column(String(255), nullable=False)
     original_filename = Column(String(255), nullable=False)
     file_path = Column(String(512), nullable=False)
+    file_url = Column(String(512), nullable=True)  # Cloudinary URL
     file_size = Column(Integer, nullable=False)  # bytes
     file_type = Column(String(50), nullable=False)
     mime_type = Column(String(100))

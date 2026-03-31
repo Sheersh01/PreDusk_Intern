@@ -19,6 +19,7 @@ class DocumentRead(DocumentBase):
 
     id: UUID
     filename: str
+    file_url: Optional[str] = None  # Cloudinary URL
     created_at: datetime
     updated_at: Optional[datetime] = None
 

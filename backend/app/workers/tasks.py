@@ -15,6 +15,7 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 
+import requests
 import sqlalchemy
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
@@ -38,6 +39,48 @@ def _get_job_and_doc(db: Session, job_id: str):
         raise ValueError(f"Job {job_id} not found")
     doc = db.query(Document).filter(Document.id == job.document_id).first()
     return job, doc
+
+
+def _download_file_to_tmp(doc: Document) -> str:
+    """
+    Download file from Cloudinary URL or read from local path.
+    Returns the path to the file in /tmp/ for processing.
+    """
+    tmp_dir = Path("/tmp")
+    tmp_dir.mkdir(exist_ok=True)
+    
+    # Preserve extension to keep parser behavior aligned with original type
+    ext = doc.file_type if doc.file_type.startswith(".") else f".{doc.file_type}"
+    tmp_filename = f"/tmp/document_{doc.id}{ext}"
+    
+    try:
+        # Try Cloudinary URL first if available
+        if doc.file_url:
+            print(f"Downloading from Cloudinary: {doc.file_url}")
+            response = requests.get(doc.file_url, timeout=30)
+            response.raise_for_status()
+            
+            with open(tmp_filename, "wb") as f:
+                f.write(response.content)
+            print(f"Downloaded to {tmp_filename}")
+            return tmp_filename
+        
+        # Fallback to local file
+        elif Path(doc.file_path).exists():
+            print(f"Using local file: {doc.file_path}")
+            local_path = Path(doc.file_path)
+            content = local_path.read_bytes()
+            with open(tmp_filename, "wb") as f:
+                f.write(content)
+            print(f"Copied to {tmp_filename}")
+            return tmp_filename
+        
+        else:
+            raise FileNotFoundError(f"File not found: neither Cloudinary URL nor local path available")
+    
+    except Exception as e:
+        print(f"Error downloading/copying file: {e}")
+        raise
 
 
 def _emit(db: Session, job: ProcessingJob, event_type: str, message: str, progress: int, status: str):
@@ -203,6 +246,7 @@ def process_document(self, job_id: str):
     Published progress events at each stage via Redis Pub/Sub.
     """
     db: Session = SyncSession()
+    file_path_to_process = None
 
     try:
         job, doc = _get_job_and_doc(db, job_id)
@@ -221,8 +265,11 @@ def process_document(self, job_id: str):
         _emit(db, job, "parsing_started", f"Parsing document: {doc.original_filename}", 15, "processing")
         time.sleep(0.8)
 
+        # Download file from Cloudinary or use local copy
+        file_path_to_process = _download_file_to_tmp(doc)
+
         # Actual text extraction
-        raw_text = _extract_text_from_file(doc.file_path, doc.file_type)
+        raw_text = _extract_text_from_file(file_path_to_process, doc.file_type)
 
         # ── Stage 3: Parsing completed ──────────────────────────────────────
         _emit(db, job, "parsing_completed", f"Parsed {len(raw_text)} characters from document", 35, "processing")
@@ -277,4 +324,12 @@ def process_document(self, job_id: str):
         raise self.retry(exc=exc, countdown=2 ** self.request.retries * 5)
 
     finally:
+        # Cleanup temp file if it was created
+        if file_path_to_process and Path(file_path_to_process).exists():
+            try:
+                Path(file_path_to_process).unlink()
+                print(f"Cleaned up temp file: {file_path_to_process}")
+            except Exception as e:
+                print(f"Failed to clean up temp file: {e}")
+        
         db.close()

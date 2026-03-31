@@ -64,9 +64,18 @@ async def upload_documents(
                 errors.append(f"{file.filename}: file exceeds {settings.MAX_FILE_SIZE_MB}MB limit")
                 continue
 
+            # Save locally as fallback
             file_path, unique_name, file_type = await document_service.save_uploaded_file(
                 content, file.filename
             )
+
+            file_url = None
+            if settings.USE_CLOUDINARY:
+                try:
+                    file_url = document_service.upload_to_cloudinary(content, file.filename)
+                except Exception as e:
+                    errors.append(f"{file.filename}: cloud upload failed ({str(e)})")
+                    continue
 
             doc, job = await document_service.create_document_and_job(
                 db=db,
@@ -76,6 +85,7 @@ async def upload_documents(
                 file_size=len(content),
                 file_type=file_type,
                 mime_type=file.content_type,
+                file_url=file_url,  # Pass Cloudinary URL
             )
 
             # Dispatch Celery task

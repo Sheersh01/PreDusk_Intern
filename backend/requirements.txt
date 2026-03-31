@@ -17,3 +17,5 @@ pytest==8.2.0
 pytest-asyncio==0.23.6
 anyio==4.3.0
 greenlet==3.0.3
+cloudinary==1.36.0
+requests==2.31.0

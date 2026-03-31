@@ -4,7 +4,6 @@ API routes delegate to this layer; no DB code in routes.
 """
 
 import csv
-import io
 import json
 import uuid
 from uuid import UUID
@@ -20,6 +19,14 @@ from app.core.config import settings
 from app.models.document import Document, ProcessingJob, JobStatus, JobEvent
 from app.schemas.document import ReviewedDataUpdate
 
+# Cloudinary setup
+try:
+    import cloudinary
+    import cloudinary.uploader
+    CLOUDINARY_AVAILABLE = True
+except ImportError:
+    CLOUDINARY_AVAILABLE = False
+
 
 class InvalidJobTransitionError(Exception):
     """Raised when a job transition is not allowed."""
@@ -34,6 +41,55 @@ def _to_uuid(value) -> Optional[UUID]:
         return UUID(str(value))
     except (ValueError, TypeError):
         return None
+
+
+# ─── Cloudinary ───────────────────────────────────────────────────────────────
+
+def _init_cloudinary():
+    """Initialize Cloudinary with settings."""
+    if not CLOUDINARY_AVAILABLE:
+        return False
+    
+    if not (settings.CLOUDINARY_CLOUD_NAME and settings.CLOUDINARY_API_KEY and settings.CLOUDINARY_API_SECRET):
+        return False
+    
+    cloudinary.config(
+        cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+        api_key=settings.CLOUDINARY_API_KEY,
+        api_secret=settings.CLOUDINARY_API_SECRET,
+    )
+    return True
+
+
+def upload_to_cloudinary(file_content: bytes, original_filename: str) -> str:
+    """
+    Upload file to Cloudinary and return a secure URL.
+    Raises RuntimeError when upload is enabled but cannot be completed.
+    """
+    if not CLOUDINARY_AVAILABLE:
+        raise RuntimeError("cloudinary package is not installed")
+    
+    if not _init_cloudinary():
+        raise RuntimeError("Cloudinary credentials are missing or invalid")
+    
+    try:
+        # Upload with generated public_id under docflow folder
+        public_id = f"docflow/{uuid.uuid4().hex}"
+        
+        result = cloudinary.uploader.upload(
+            file_content,
+            public_id=public_id,
+            resource_type="raw",
+            overwrite=True,
+            filename_override=Path(original_filename).name,
+        )
+
+        url = result.get("secure_url") or result.get("url")
+        if not url:
+            raise RuntimeError("Cloudinary did not return a file URL")
+        return url
+    except Exception as e:
+        raise RuntimeError(f"Cloudinary upload failed: {e}") from e
 
 
 # ─── Upload ───────────────────────────────────────────────────────────────────
@@ -59,11 +115,13 @@ async def create_document_and_job(
     file_size: int,
     file_type: str,
     mime_type: Optional[str] = None,
+    file_url: Optional[str] = None,
 ) -> tuple[Document, ProcessingJob]:
     doc = Document(
         original_filename=original_filename,
         filename=unique_filename,
         file_path=file_path,
+        file_url=file_url,  # Store Cloudinary URL if provided
         file_size=file_size,
         file_type=file_type,
         mime_type=mime_type,
