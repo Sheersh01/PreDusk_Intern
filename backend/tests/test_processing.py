@@ -5,7 +5,12 @@ Run: pytest tests/ -v
 
 import pytest
 import json
-from unittest.mock import patch, MagicMock
+import asyncio
+from unittest.mock import patch, MagicMock, AsyncMock
+from types import SimpleNamespace
+
+from app.services import document_service
+from app.api.routes import documents as documents_routes
 from app.workers.tasks import _extract_text_from_file, _extract_structured_data, _infer_category
 
 
@@ -135,3 +140,42 @@ def test_publish_progress_sync_calls_redis():
 
         mock_client.setex.assert_called_once()
         mock_client.close.assert_called_once()
+
+
+# ── Unit: export filtering behavior ──────────────────────────────────────────
+
+def test_export_jobs_json_default_excludes_completed():
+    fake_db = AsyncMock()
+    fake_job = SimpleNamespace(reviewed_data={}, extracted_data={}, document=None, status=SimpleNamespace(value="finalized"), completed_at=None, retry_count=0, id="j1")
+
+    with patch("app.services.document_service._fetch_export_jobs", AsyncMock(return_value=[fake_job])) as mock_fetch:
+        with patch("app.services.document_service._job_to_export_dict", return_value={"status": "finalized"}):
+            output = asyncio.run(document_service.export_jobs_json(fake_db))
+
+    assert '"status": "finalized"' in output
+    assert mock_fetch.await_count == 1
+    assert mock_fetch.await_args.kwargs["include_completed"] is False
+
+
+def test_export_jobs_json_allows_include_completed_opt_in():
+    fake_db = AsyncMock()
+
+    with patch("app.services.document_service._fetch_export_jobs", AsyncMock(return_value=[])) as mock_fetch:
+        asyncio.run(document_service.export_jobs_json(fake_db, include_completed=True))
+
+    assert mock_fetch.await_count == 1
+    assert mock_fetch.await_args.kwargs["include_completed"] is True
+
+
+def test_export_routes_forward_include_completed_flag():
+    fake_db = AsyncMock()
+
+    with patch("app.api.routes.documents.document_service.export_jobs_json", AsyncMock(return_value="[]")) as mock_json:
+        asyncio.run(documents_routes.export_json(job_ids=None, include_completed=True, db=fake_db))
+    assert mock_json.await_count == 1
+    assert mock_json.await_args.kwargs["include_completed"] is True
+
+    with patch("app.api.routes.documents.document_service.export_jobs_csv", AsyncMock(return_value="")) as mock_csv:
+        asyncio.run(documents_routes.export_csv(job_ids=None, include_completed=True, db=fake_db))
+    assert mock_csv.await_count == 1
+    assert mock_csv.await_args.kwargs["include_completed"] is True

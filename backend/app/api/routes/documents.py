@@ -123,10 +123,15 @@ async def list_jobs(
 @router.get("/jobs/export/json")
 async def export_json(
     job_ids: Optional[str] = Query(None, description="Comma-separated job IDs"),
+    include_completed: bool = Query(False, description="Include completed jobs in export"),
     db: AsyncSession = Depends(get_db),
 ):
     ids = job_ids.split(",") if job_ids else None
-    data = await document_service.export_jobs_json(db, ids)
+    data = await document_service.export_jobs_json(
+        db,
+        ids,
+        include_completed=include_completed,
+    )
     return Response(
         content=data,
         media_type="application/json",
@@ -137,10 +142,15 @@ async def export_json(
 @router.get("/jobs/export/csv")
 async def export_csv(
     job_ids: Optional[str] = Query(None, description="Comma-separated job IDs"),
+    include_completed: bool = Query(False, description="Include completed jobs in export"),
     db: AsyncSession = Depends(get_db),
 ):
     ids = job_ids.split(",") if job_ids else None
-    data = await document_service.export_jobs_csv(db, ids)
+    data = await document_service.export_jobs_csv(
+        db,
+        ids,
+        include_completed=include_completed,
+    )
     return Response(
         content=data,
         media_type="text/csv",
@@ -188,7 +198,16 @@ async def stream_progress(job_id: str, request: Request, db: AsyncSession = Depe
                 if await request.is_disconnected():
                     break
 
-                msg = await asyncio.wait_for(pubsub.get_message(ignore_subscribe_messages=True), timeout=1.0)
+                try:
+                    msg = await asyncio.wait_for(
+                        pubsub.get_message(ignore_subscribe_messages=True),
+                        timeout=1.0,
+                    )
+                except asyncio.TimeoutError:
+                    # Keep stream alive when no messages arrive in this interval.
+                    await asyncio.sleep(0.1)
+                    continue
+
                 if msg and msg["type"] == "message":
                     yield f"data: {msg['data']}\n\n"
 
@@ -203,8 +222,6 @@ async def stream_progress(job_id: str, request: Request, db: AsyncSession = Depe
 
                 await asyncio.sleep(0.1)
 
-        except asyncio.TimeoutError:
-            pass
         except Exception:
             pass
         finally:
@@ -252,7 +269,11 @@ async def finalize_job(
     body: FinalizeRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    job = await document_service.finalize_job(db, job_id, body.reviewed_data)
+    try:
+        job = await document_service.finalize_job(db, job_id, body.reviewed_data)
+    except document_service.InvalidJobTransitionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
@@ -277,16 +298,8 @@ async def retry_job(job_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.delete("/jobs/{job_id}", status_code=204)
 async def delete_job(job_id: str, db: AsyncSession = Depends(get_db)):
-    from sqlalchemy import select, delete
-    from app.models.document import ProcessingJob, Document, JobEvent
-
     job = await document_service.get_job_detail(db, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    doc_id = job.document_id
-
-    await db.execute(delete(JobEvent).where(JobEvent.job_id == job_id))
-    await db.execute(delete(ProcessingJob).where(ProcessingJob.id == job_id))
-    await db.execute(delete(Document).where(Document.id == doc_id))
-    await db.commit()
+    await document_service.delete_job_and_document(db, job_id, job.document_id)

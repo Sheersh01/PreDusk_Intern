@@ -6,23 +6,25 @@ A production-style full-stack application for uploading documents, processing th
 
 ## Demo
 
-> **Note:** Record a 3–5 min walkthrough covering: upload → live progress → detail review → edit → finalize → export.
+Demo video (3–5 min): `ADD_YOUR_VIDEO_LINK_HERE`
+
+Suggested walkthrough: upload -> live progress -> detail review -> edit -> finalize -> export.
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Frontend | React 18 + Vite + TypeScript |
-| Backend | Python 3.11 + FastAPI |
-| Database | PostgreSQL 15 |
-| Background workers | Celery 5 |
-| Broker / Pub-Sub | Redis 7 |
-| Progress streaming | Server-Sent Events (SSE) |
-| State management | Zustand |
-| ORM | SQLAlchemy 2 (async) |
-| Containerisation | Docker Compose |
+| Layer              | Technology                   |
+| ------------------ | ---------------------------- |
+| Frontend           | React 18 + Vite + TypeScript |
+| Backend            | Python 3.11 + FastAPI        |
+| Database           | PostgreSQL 15                |
+| Background workers | Celery 5                     |
+| Broker / Pub-Sub   | Redis 7                      |
+| Progress streaming | Server-Sent Events (SSE)     |
+| State management   | Zustand                      |
+| ORM                | SQLAlchemy 2 (async)         |
+| Containerisation   | Docker Compose               |
 
 ---
 
@@ -156,6 +158,7 @@ docker compose up --build
 All tables are created automatically on first backend start via `init_db()`.
 
 To stop:
+
 ```bash
 docker compose down          # keep volumes
 docker compose down -v       # also remove data volumes
@@ -230,6 +233,7 @@ pytest tests/ -v
 ```
 
 The test suite covers:
+
 - Text extraction for `.txt`, `.json`, `.csv` formats
 - Missing file handling
 - Structured data field extraction (title, keywords, word count, checksum)
@@ -240,19 +244,19 @@ The test suite covers:
 
 ## API Reference
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/v1/upload` | Upload one or more documents |
-| `GET` | `/api/v1/jobs` | List jobs with search / filter / sort / paginate |
-| `GET` | `/api/v1/jobs/{id}` | Full job detail with events |
-| `GET` | `/api/v1/jobs/{id}/progress` | SSE stream for live progress |
-| `GET` | `/api/v1/jobs/{id}/status` | Polling fallback (Redis key) |
-| `PATCH` | `/api/v1/jobs/{id}/review` | Save reviewed/edited data |
-| `POST` | `/api/v1/jobs/{id}/finalize` | Finalize a completed job |
-| `POST` | `/api/v1/jobs/{id}/retry` | Retry a failed job |
-| `GET` | `/api/v1/jobs/export/json` | Export finalized jobs as JSON |
-| `GET` | `/api/v1/jobs/export/csv` | Export finalized jobs as CSV |
-| `DELETE` | `/api/v1/jobs/{id}` | Delete job and document |
+| Method   | Endpoint                     | Description                                                        |
+| -------- | ---------------------------- | ------------------------------------------------------------------ |
+| `POST`   | `/api/v1/upload`             | Upload one or more documents                                       |
+| `GET`    | `/api/v1/jobs`               | List jobs with search / filter / sort / paginate                   |
+| `GET`    | `/api/v1/jobs/{id}`          | Full job detail with events                                        |
+| `GET`    | `/api/v1/jobs/{id}/progress` | SSE stream for live progress                                       |
+| `GET`    | `/api/v1/jobs/{id}/status`   | Polling fallback (Redis key)                                       |
+| `PATCH`  | `/api/v1/jobs/{id}/review`   | Save reviewed/edited data                                          |
+| `POST`   | `/api/v1/jobs/{id}/finalize` | Finalize a completed job (`400` for invalid states)                |
+| `POST`   | `/api/v1/jobs/{id}/retry`    | Retry a failed job                                                 |
+| `GET`    | `/api/v1/jobs/export/json`   | Export finalized jobs as JSON (`?include_completed=true` optional) |
+| `GET`    | `/api/v1/jobs/export/csv`    | Export finalized jobs as CSV (`?include_completed=true` optional)  |
+| `DELETE` | `/api/v1/jobs/{id}`          | Delete job and document                                            |
 
 Interactive docs available at `http://localhost:8000/docs`.
 
@@ -276,10 +280,16 @@ job_failed           (any) — on exception, with error message
 ```
 
 Each event is:
+
 1. Persisted as a `JobEvent` row in PostgreSQL
 2. Published to Redis channel `job_progress:{job_id}`
 3. Written to Redis key `job_status:{job_id}` (TTL 1 hour) for polling fallback
 4. Streamed to connected SSE clients
+
+SSE behavior notes:
+
+- Pub/Sub read timeouts do not terminate the stream.
+- Stream closes only on client disconnect or terminal job statuses.
 
 ---
 
@@ -295,13 +305,13 @@ Each event is:
 
 ## Tradeoffs
 
-| Decision | Rationale |
-|---|---|
-| SSE over WebSocket | Simpler, stateless, works through HTTP proxies. Sufficient for unidirectional progress. |
-| Sync SQLAlchemy in Celery | Celery workers run in their own process/thread pool without an async event loop. Using sync psycopg2 avoids event loop conflicts. |
-| Redis dual-role (broker + pubsub) | Reduces infrastructure surface area. Separate DBs (0, 1, 2) prevent key collisions. |
-| `reviewed_data` pre-filled from `extracted_data` | User sees extracted results immediately on the review screen without having to copy them manually. |
-| DB-persisted events + Redis Pub/Sub | Events in DB give permanent audit trail. Redis gives low-latency live streaming. Both serve different consumers. |
+| Decision                                         | Rationale                                                                                                                         |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| SSE over WebSocket                               | Simpler, stateless, works through HTTP proxies. Sufficient for unidirectional progress.                                           |
+| Sync SQLAlchemy in Celery                        | Celery workers run in their own process/thread pool without an async event loop. Using sync psycopg2 avoids event loop conflicts. |
+| Redis dual-role (broker + pubsub)                | Reduces infrastructure surface area. Separate DBs (0, 1, 2) prevent key collisions.                                               |
+| `reviewed_data` pre-filled from `extracted_data` | User sees extracted results immediately on the review screen without having to copy them manually.                                |
+| DB-persisted events + Redis Pub/Sub              | Events in DB give permanent audit trail. Redis gives low-latency live streaming. Both serve different consumers.                  |
 
 ---
 
@@ -310,7 +320,7 @@ Each event is:
 - DOCX parsing is mocked (requires `python-docx`, not included to keep deps lean).
 - No file deduplication (same file can be uploaded twice, creating separate jobs).
 - SSE reconnection on network drop is handled by the browser's native EventSource retry, but no explicit resume-from-offset is implemented.
-- Export endpoint streams all completed/finalized jobs if no IDs specified — add pagination for large datasets.
+- Default export returns finalized jobs only; `include_completed=true` can broaden the scope.
 - No rate limiting on upload endpoint.
 
 ---
@@ -328,5 +338,6 @@ Each event is:
 ## AI Tools Note
 
 This project was developed with assistance from Claude (Anthropic) for code generation, architectural scaffolding, and documentation drafting. All generated code was reviewed, understood, and validated before inclusion.
-#   P r e D u s k _ I n t e r n  
+#   P r e D u s k _ I n t e r n 
+ 
  

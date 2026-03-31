@@ -163,6 +163,22 @@ function EditableField({
 
 // ── Event timeline ────────────────────────────────────────────────────────────
 function EventTimeline({ events }: { events: ProcessingJob["events"] }) {
+  const getEventDotColor = (eventType: string) => {
+    const stageColorMap: Record<string, string> = {
+      job_queued: "var(--blue)",
+      document_received: "var(--yellow)",
+      parsing_started: "var(--accent-2)",
+      parsing_completed: "var(--accent-2)",
+      extraction_started: "var(--blue)",
+      extraction_completed: "var(--blue)",
+      final_result_stored: "var(--accent)",
+      job_completed: "var(--accent)",
+      job_failed: "var(--red)",
+      job_finalized: "var(--blue)",
+    };
+    return stageColorMap[eventType] ?? "var(--border-bright)";
+  };
+
   return (
     <div>
       {events.map((ev, i) => (
@@ -190,14 +206,7 @@ function EventTimeline({ events }: { events: ProcessingJob["events"] }) {
                 height: 7,
                 borderRadius: "50%",
                 marginTop: 4,
-                background:
-                  ev.event_type === "job_completed"
-                    ? "var(--accent)"
-                    : ev.event_type === "job_failed"
-                      ? "var(--red)"
-                      : ev.event_type === "job_finalized"
-                        ? "var(--blue)"
-                        : "var(--border-bright)",
+                background: getEventDotColor(ev.event_type),
                 flexShrink: 0,
               }}
             />

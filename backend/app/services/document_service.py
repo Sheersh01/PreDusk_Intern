@@ -7,17 +7,33 @@ import csv
 import io
 import json
 import uuid
+from uuid import UUID
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from sqlalchemy import select, func, desc, asc
+from sqlalchemy import select, func, desc, asc, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.models.document import Document, ProcessingJob, JobStatus, JobEvent
 from app.schemas.document import ReviewedDataUpdate
+
+
+class InvalidJobTransitionError(Exception):
+    """Raised when a job transition is not allowed."""
+
+
+def _to_uuid(value) -> Optional[UUID]:
+    if isinstance(value, UUID):
+        return value
+    if not value:
+        return None
+    try:
+        return UUID(str(value))
+    except (ValueError, TypeError):
+        return None
 
 
 # ─── Upload ───────────────────────────────────────────────────────────────────
@@ -121,9 +137,13 @@ async def list_jobs(
 
 
 async def get_job_detail(db: AsyncSession, job_id: str) -> Optional[ProcessingJob]:
+    parsed_job_id = _to_uuid(job_id)
+    if not parsed_job_id:
+        return None
+
     result = await db.execute(
         select(ProcessingJob)
-        .where(ProcessingJob.id == job_id)
+        .where(ProcessingJob.id == parsed_job_id)
         .options(
             selectinload(ProcessingJob.document),
             selectinload(ProcessingJob.events),
@@ -153,6 +173,16 @@ async def finalize_job(
     job = await get_job_detail(db, job_id)
     if not job:
         return None
+
+    # Idempotent finalize for already finalized jobs.
+    if job.status == JobStatus.FINALIZED:
+        return job
+
+    if job.status != JobStatus.COMPLETED:
+        raise InvalidJobTransitionError(
+            f"Only completed jobs can be finalized. Current status: {job.status.value}"
+        )
+
     if reviewed_data:
         job.reviewed_data = reviewed_data
     job.status = JobStatus.FINALIZED
@@ -218,14 +248,22 @@ def _job_to_export_dict(job: ProcessingJob) -> dict:
     }
 
 
-async def export_jobs_json(db: AsyncSession, job_ids: Optional[list[str]] = None) -> str:
-    jobs = await _fetch_export_jobs(db, job_ids)
+async def export_jobs_json(
+    db: AsyncSession,
+    job_ids: Optional[list[str]] = None,
+    include_completed: bool = False,
+) -> str:
+    jobs = await _fetch_export_jobs(db, job_ids, include_completed=include_completed)
     records = [_job_to_export_dict(j) for j in jobs]
     return json.dumps(records, indent=2, default=str)
 
 
-async def export_jobs_csv(db: AsyncSession, job_ids: Optional[list[str]] = None) -> str:
-    jobs = await _fetch_export_jobs(db, job_ids)
+async def export_jobs_csv(
+    db: AsyncSession,
+    job_ids: Optional[list[str]] = None,
+    include_completed: bool = False,
+) -> str:
+    jobs = await _fetch_export_jobs(db, job_ids, include_completed=include_completed)
     records = [_job_to_export_dict(j) for j in jobs]
     if not records:
         return ""
@@ -239,11 +277,28 @@ async def export_jobs_csv(db: AsyncSession, job_ids: Optional[list[str]] = None)
     return output.getvalue()
 
 
-async def _fetch_export_jobs(db: AsyncSession, job_ids: Optional[list[str]]) -> list[ProcessingJob]:
+async def _fetch_export_jobs(
+    db: AsyncSession,
+    job_ids: Optional[list[str]],
+    include_completed: bool = False,
+) -> list[ProcessingJob]:
     query = select(ProcessingJob).options(selectinload(ProcessingJob.document))
     if job_ids:
-        query = query.where(ProcessingJob.id.in_(job_ids))
+        parsed_job_ids = [jid for jid in (_to_uuid(j) for j in job_ids) if jid is not None]
+        if not parsed_job_ids:
+            return []
+        query = query.where(ProcessingJob.id.in_(parsed_job_ids))
     else:
-        query = query.where(ProcessingJob.status.in_([JobStatus.COMPLETED, JobStatus.FINALIZED]))
+        statuses = [JobStatus.FINALIZED]
+        if include_completed:
+            statuses.append(JobStatus.COMPLETED)
+        query = query.where(ProcessingJob.status.in_(statuses))
     result = await db.execute(query)
     return list(result.scalars().all())
+
+
+async def delete_job_and_document(db: AsyncSession, job_id: str, document_id) -> None:
+    await db.execute(delete(JobEvent).where(JobEvent.job_id == job_id))
+    await db.execute(delete(ProcessingJob).where(ProcessingJob.id == job_id))
+    await db.execute(delete(Document).where(Document.id == document_id))
+    await db.commit()

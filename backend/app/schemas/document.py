@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, Any
 from datetime import datetime
 from uuid import UUID
@@ -33,7 +33,7 @@ class JobEventRead(BaseModel):
     event_type: str
     message: Optional[str] = None
     progress: Optional[int] = None
-    metadata: Optional[dict] = None
+    metadata: Optional[dict] = Field(default=None, validation_alias="extra_metadata")
     created_at: datetime
 
 
