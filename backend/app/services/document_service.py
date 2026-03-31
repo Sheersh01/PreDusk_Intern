@@ -80,6 +80,8 @@ def upload_to_cloudinary(file_content: bytes, original_filename: str) -> str:
             file_content,
             public_id=public_id,
             resource_type="raw",
+            type="upload",
+            access_mode="public",
             overwrite=True,
             filename_override=Path(original_filename).name,
         )

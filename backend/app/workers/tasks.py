@@ -14,6 +14,7 @@ import re
 import hashlib
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
 import sqlalchemy
@@ -24,6 +25,13 @@ from app.workers.celery_app import celery_app
 from app.core.config import settings
 from app.core.redis_pubsub import publish_progress_sync
 from app.models.document import ProcessingJob, JobStatus, JobEvent, Document
+
+try:
+    import cloudinary
+    from cloudinary.utils import cloudinary_url
+    CLOUDINARY_AVAILABLE = True
+except ImportError:
+    CLOUDINARY_AVAILABLE = False
 
 # Sync DB engine for Celery workers
 sync_engine = create_engine(
@@ -53,34 +61,96 @@ def _download_file_to_tmp(doc: Document) -> str:
     ext = doc.file_type if doc.file_type.startswith(".") else f".{doc.file_type}"
     tmp_filename = f"/tmp/document_{doc.id}{ext}"
     
-    try:
-        # Try Cloudinary URL first if available
-        if doc.file_url:
+    # Try Cloudinary URL first if available
+    if doc.file_url:
+        try:
             print(f"Downloading from Cloudinary: {doc.file_url}")
             response = requests.get(doc.file_url, timeout=30)
             response.raise_for_status()
-            
+
             with open(tmp_filename, "wb") as f:
                 f.write(response.content)
             print(f"Downloaded to {tmp_filename}")
             return tmp_filename
-        
-        # Fallback to local file
-        elif Path(doc.file_path).exists():
-            print(f"Using local file: {doc.file_path}")
-            local_path = Path(doc.file_path)
-            content = local_path.read_bytes()
-            with open(tmp_filename, "wb") as f:
-                f.write(content)
-            print(f"Copied to {tmp_filename}")
-            return tmp_filename
-        
-        else:
-            raise FileNotFoundError(f"File not found: neither Cloudinary URL nor local path available")
-    
+        except requests.HTTPError as e:
+            status_code = e.response.status_code if e.response is not None else None
+            print(f"Cloudinary direct download failed ({status_code}): {e}")
+
+            # Some Cloudinary setups require signed delivery URLs for raw files.
+            if status_code in (401, 403):
+                signed_url = _build_signed_cloudinary_url(doc.file_url)
+                if signed_url:
+                    try:
+                        print("Retrying Cloudinary fetch with signed URL")
+                        response = requests.get(signed_url, timeout=30)
+                        response.raise_for_status()
+                        with open(tmp_filename, "wb") as f:
+                            f.write(response.content)
+                        print(f"Downloaded (signed URL) to {tmp_filename}")
+                        return tmp_filename
+                    except Exception as signed_err:
+                        print(f"Signed URL download failed: {signed_err}")
+        except Exception as e:
+            print(f"Cloudinary download failed: {e}")
+
+    # Fallback to local file path to avoid failing jobs when Cloudinary delivery is restricted
+    if doc.file_path and Path(doc.file_path).exists():
+        print(f"Using local file fallback: {doc.file_path}")
+        local_path = Path(doc.file_path)
+        content = local_path.read_bytes()
+        with open(tmp_filename, "wb") as f:
+            f.write(content)
+        print(f"Copied fallback file to {tmp_filename}")
+        return tmp_filename
+
+    raise FileNotFoundError("File not found: neither downloadable Cloudinary URL nor local path available")
+
+
+def _build_signed_cloudinary_url(file_url: str) -> str | None:
+    if not CLOUDINARY_AVAILABLE:
+        return None
+    if not (settings.CLOUDINARY_CLOUD_NAME and settings.CLOUDINARY_API_KEY and settings.CLOUDINARY_API_SECRET):
+        return None
+
+    try:
+        cloudinary.config(
+            cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+            api_key=settings.CLOUDINARY_API_KEY,
+            api_secret=settings.CLOUDINARY_API_SECRET,
+        )
+
+        parsed = urlparse(file_url)
+        marker = "/upload/"
+        if marker not in parsed.path:
+            return None
+
+        raw_part = parsed.path.split(marker, 1)[1]
+        if raw_part.startswith("v") and "/" in raw_part:
+            version_part, maybe_rest = raw_part.split("/", 1)
+            if version_part[1:].isdigit():
+                raw_part = maybe_rest
+
+        public_part = raw_part.lstrip("/")
+        if not public_part:
+            return None
+
+        file_format = None
+        public_id = public_part
+        if "." in public_part.rsplit("/", 1)[-1]:
+            public_id, file_format = public_part.rsplit(".", 1)
+
+        signed, _ = cloudinary_url(
+            public_id,
+            resource_type="raw",
+            type="upload",
+            format=file_format,
+            secure=True,
+            sign_url=True,
+        )
+        return signed
     except Exception as e:
-        print(f"Error downloading/copying file: {e}")
-        raise
+        print(f"Could not build signed Cloudinary URL: {e}")
+        return None
 
 
 def _emit(db: Session, job: ProcessingJob, event_type: str, message: str, progress: int, status: str):
