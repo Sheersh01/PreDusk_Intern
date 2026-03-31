@@ -260,6 +260,22 @@ The test suite covers:
 
 Interactive docs available at `http://localhost:8000/docs`.
 
+### Dashboard Export Options
+
+The dashboard export menu supports grouped options:
+
+- **All Jobs**
+  - Finalized only (`.json`, `.csv`)
+  - Completed + finalized (`.json`, `.csv`)
+- **Current Page**
+  - Finalized only (`.json`, `.csv`)
+  - Completed + finalized (`.json`, `.csv`)
+
+Implementation notes:
+
+- `include_completed=true` includes completed records in addition to finalized.
+- `job_ids` query parameter exports only selected jobs from the current page.
+
 ---
 
 ## Processing Pipeline Detail
@@ -338,6 +354,3 @@ SSE behavior notes:
 ## AI Tools Note
 
 This project was developed with assistance from Claude (Anthropic) for code generation, architectural scaffolding, and documentation drafting. All generated code was reviewed, understood, and validated before inclusion.
-#   P r e D u s k _ I n t e r n 
- 
- 
