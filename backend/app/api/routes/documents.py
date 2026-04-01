@@ -113,13 +113,18 @@ async def list_jobs(
     page_size: int = Query(20, ge=1, le=100),
     status: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    confidence_min: Optional[float] = Query(None, ge=0, le=1),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
     sort_by: str = Query("created_at"),
     sort_dir: str = Query("desc"),
     db: AsyncSession = Depends(get_db),
 ):
     jobs, total = await document_service.list_jobs(
         db, page=page, page_size=page_size,
-        status=status, search=search,
+        status=status, search=search, category=category,
+        confidence_min=confidence_min, date_from=date_from, date_to=date_to,
         sort_by=sort_by, sort_dir=sort_dir,
     )
     pages = (total + page_size - 1) // page_size
@@ -166,6 +171,21 @@ async def export_csv(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=docflow_export.csv"},
     )
+
+
+# ─── Analytics ────────────────────────────────────────────────────────────────
+
+@router.get("/jobs/analytics")
+async def get_analytics(
+    category: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    analytics = await document_service.get_analytics(
+        db, category=category, date_from=date_from, date_to=date_to
+    )
+    return analytics
 
 
 # ─── Job Detail ───────────────────────────────────────────────────────────────

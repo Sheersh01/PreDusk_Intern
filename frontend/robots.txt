@@ -1,0 +1,25 @@
+# Robots.txt for DocFlow Frontend
+# Deployed on Vercel
+
+User-agent: *
+Allow: /
+Allow: /login
+
+# Disallow private/authenticated routes
+Disallow: /upload
+Disallow: /jobs/
+Disallow: /analytics
+
+# Allow search engines to crawl static assets
+Allow: /*.js
+Allow: /*.css
+Allow: /*.png
+Allow: /*.jpg
+Allow: /*.svg
+Allow: /*.ico
+
+# Sitemap location
+Sitemap: https://docflow.example.com/sitemap.xml
+
+# Crawl delay (optional, 1 second between requests)
+Crawl-delay: 1

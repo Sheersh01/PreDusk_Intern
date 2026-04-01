@@ -1,9 +1,10 @@
 import { Routes, Route, NavLink, useNavigate } from "react-router-dom";
-import { UploadCloud, LayoutDashboard, LogOut } from "lucide-react";
+import { UploadCloud, LayoutDashboard, LogOut, Zap } from "lucide-react";
 import DashboardPage from "./pages/DashboardPage";
 import UploadPage from "./pages/UploadPage";
 import DetailPage from "./pages/DetailPage";
 import LoginPage from "./pages/LoginPage";
+import { AnalyticsPage } from "./pages/AnalyticsPage";
 import RequireAuth from "./auth/RequireAuth";
 import { getCurrentUsername, isAuthenticated, logoutDummy } from "./auth/auth";
 
@@ -59,6 +60,22 @@ function Topbar() {
               />
               Dashboard
             </NavLink>
+            <NavLink
+              to="/analytics"
+              className={({ isActive }) =>
+                `topbar-link${isActive ? " active" : ""}`
+              }
+            >
+              <Zap
+                size={13}
+                style={{
+                  display: "inline",
+                  marginRight: 5,
+                  verticalAlign: "middle",
+                }}
+              />
+              Analytics
+            </NavLink>
           </nav>
 
           <div
@@ -108,6 +125,14 @@ export default function App() {
             element={
               <RequireAuth>
                 <UploadPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/analytics"
+            element={
+              <RequireAuth>
+                <AnalyticsPage />
               </RequireAuth>
             }
           />

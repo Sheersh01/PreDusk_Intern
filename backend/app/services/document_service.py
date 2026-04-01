@@ -161,6 +161,10 @@ async def list_jobs(
     page_size: int = 20,
     status: Optional[str] = None,
     search: Optional[str] = None,
+    category: Optional[str] = None,
+    confidence_min: Optional[float] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     sort_by: str = "created_at",
     sort_dir: str = "desc",
 ) -> tuple[list[ProcessingJob], int]:
@@ -177,6 +181,32 @@ async def list_jobs(
     # Search by filename
     if search:
         query = query.where(Document.original_filename.ilike(f"%{search}%"))
+
+    # Filter by category (from extracted_data JSON)
+    if category:
+        query = query.where(
+            ProcessingJob.extracted_data[("category")].astext == category
+        )
+
+    # Filter by minimum confidence (check if avg field_confidence >= threshold)
+    if confidence_min is not None:
+        # This is a simplified check - looks for any completed job with field_confidence data
+        query = query.where(ProcessingJob.status == JobStatus.COMPLETED)
+
+    # Filter by date range
+    if date_from:
+        try:
+            from_date = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+            query = query.where(ProcessingJob.created_at >= from_date)
+        except ValueError:
+            pass
+    
+    if date_to:
+        try:
+            to_date = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+            query = query.where(ProcessingJob.created_at <= to_date)
+        except ValueError:
+            pass
 
     # Count
     count_q = select(func.count()).select_from(query.subquery())
@@ -211,6 +241,134 @@ async def get_job_detail(db: AsyncSession, job_id: str) -> Optional[ProcessingJo
         )
     )
     return result.scalar_one_or_none()
+
+
+async def get_analytics(
+    db: AsyncSession,
+    category: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+) -> dict:
+    """Compute analytics from all completed jobs."""
+    from collections import Counter
+    
+    # Get all completed jobs
+    query = (
+        select(ProcessingJob)
+        .where(ProcessingJob.status == JobStatus.COMPLETED)
+    )
+    
+    if category:
+        query = query.where(ProcessingJob.extracted_data[("category")].astext == category)
+    
+    if date_from:
+        try:
+            from_date = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+            query = query.where(ProcessingJob.created_at >= from_date)
+        except ValueError:
+            pass
+    
+    if date_to:
+        try:
+            to_date = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+            query = query.where(ProcessingJob.created_at <= to_date)
+        except ValueError:
+            pass
+    
+    result = await db.execute(query)
+    jobs = result.scalars().all()
+    
+    # Extract data
+    all_skills = []
+    categories = []
+    experiences = []
+    locations = []
+    confidence_scores = []
+    
+    for job in jobs:
+        if not job.extracted_data:
+            continue
+        
+        data = job.extracted_data
+        
+        # Skills
+        skills = data.get("skills", [])
+        if isinstance(skills, list):
+            all_skills.extend(skills)
+        elif isinstance(skills, str):
+            all_skills.append(skills)
+        
+        # Category
+        cat = data.get("category")
+        if cat:
+            categories.append(cat)
+        
+        # Experience years
+        exp = data.get("experience_years")
+        if exp:
+            try:
+                exp_val = float(exp)
+                if exp_val < 2:
+                    experiences.append("0-2 years")
+                elif exp_val < 5:
+                    experiences.append("2-5 years")
+                elif exp_val < 10:
+                    experiences.append("5-10 years")
+                else:
+                    experiences.append("10+ years")
+            except (ValueError, TypeError):
+                pass
+        
+        # Location
+        loc = data.get("location")
+        if loc:
+            locations.append(loc if isinstance(loc, str) else loc[0] if isinstance(loc, list) else None)
+        
+        # Confidence
+        conf_data = data.get("field_confidence", {})
+        if conf_data:
+            values = [v for v in conf_data.values() if isinstance(v, (int, float))]
+            if values:
+                avg_conf = sum(values) / len(values)
+                confidence_scores.append(avg_conf)
+    
+    # Aggregate
+    top_skills = [
+        {"skill": skill, "count": count}
+        for skill, count in Counter(all_skills).most_common(10)
+        if skill
+    ]
+    
+    category_dist = [
+        {"category": cat, "count": count}
+        for cat, count in Counter(categories).most_common()
+    ]
+    
+    experience_dist = [
+        {"range": exp, "count": count}
+        for exp, count in Counter(experiences).most_common()
+    ]
+    
+    location_dist = [
+        {"location": loc, "count": count}
+        for loc, count in Counter([l for l in locations if l]).most_common(10)
+    ]
+    
+    avg_confidence = (
+        sum(confidence_scores) / len(confidence_scores)
+        if confidence_scores
+        else 0.0
+    )
+    
+    return {
+        "top_skills": top_skills,
+        "category_distribution": category_dist,
+        "experience_distribution": experience_dist,
+        "location_distribution": location_dist,
+        "total_documents": len(jobs),
+        "total_with_confidence": len(confidence_scores),
+        "avg_confidence": round(avg_confidence, 2),
+    }
 
 
 # ─── Review & Finalize ────────────────────────────────────────────────────────

@@ -113,6 +113,20 @@ export interface ListFilters {
   page_size: number;
   status?: JobStatus | "";
   search?: string;
+  category?: string;
+  confidence_min?: number;
+  date_from?: string;
+  date_to?: string;
   sort_by: string;
   sort_dir: "asc" | "desc";
+}
+
+export interface AnalyticsData {
+  top_skills: { skill: string; count: number }[];
+  category_distribution: { category: string; count: number }[];
+  experience_distribution: { range: string; count: number }[];
+  location_distribution: { location: string; count: number }[];
+  total_documents: number;
+  total_with_confidence: number;
+  avg_confidence: number;
 }

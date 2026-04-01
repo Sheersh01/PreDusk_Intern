@@ -6,6 +6,7 @@ import type {
   ProcessingJobSummary,
   ListFilters,
   ExtractedData,
+  AnalyticsData,
 } from "../types";
 
 const BASE = (import.meta.env.VITE_API_URL || "") + "/api/v1";
@@ -33,7 +34,27 @@ export async function listJobs(
   const params: Record<string, unknown> = { ...filters };
   if (!params.status) delete params.status;
   if (!params.search) delete params.search;
+  if (!params.category) delete params.category;
+  if (params.confidence_min === null || params.confidence_min === undefined)
+    delete params.confidence_min;
+  if (!params.date_from) delete params.date_from;
+  if (!params.date_to) delete params.date_to;
   const res = await client.get<JobListResponse>("/jobs", { params });
+  return res.data;
+}
+
+// ── Analytics ─────────────────────────────────────────────────────────────────
+
+export async function getAnalytics(
+  category?: string,
+  date_from?: string,
+  date_to?: string,
+): Promise<AnalyticsData> {
+  const params: Record<string, unknown> = {};
+  if (category) params.category = category;
+  if (date_from) params.date_from = date_from;
+  if (date_to) params.date_to = date_to;
+  const res = await client.get<AnalyticsData>("/jobs/analytics", { params });
   return res.data;
 }
 
@@ -46,9 +67,7 @@ export async function getJob(jobId: string): Promise<ProcessingJob> {
 
 // ── Polling status ────────────────────────────────────────────────────────────
 
-export async function pollJobStatus(
-  jobId: string,
-): Promise<{
+export async function pollJobStatus(jobId: string): Promise<{
   status: string;
   progress: number;
   event_type: string;

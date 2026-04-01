@@ -10,6 +10,7 @@ import {
   RotateCcw,
   ExternalLink,
   FileText,
+  Zap,
 } from "lucide-react";
 import { listJobs, retryJob, deleteJob, triggerExport } from "../lib/api";
 import {
@@ -390,7 +391,13 @@ export default function DashboardPage() {
 
       {/* Filters */}
       <div
-        style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}
+        style={{
+          display: "flex",
+          gap: 10,
+          marginBottom: 16,
+          flexWrap: "wrap",
+          alignItems: "center",
+        }}
       >
         <div style={{ position: "relative", flex: "1 1 220px", minWidth: 160 }}>
           <Search
@@ -428,6 +435,45 @@ export default function DashboardPage() {
         </select>
         <select
           className="input"
+          style={{ flex: "0 0 140px" }}
+          value={filters.category || ""}
+          onChange={(e) =>
+            setFilters({ category: e.target.value || undefined, page: 1 })
+          }
+        >
+          <option value="">All categories</option>
+          <option value="resume">Resume</option>
+          <option value="technical">Technical</option>
+          <option value="financial">Financial</option>
+          <option value="legal">Legal</option>
+          <option value="report">Report</option>
+          <option value="data">Data</option>
+          <option value="general">General</option>
+        </select>
+        <input
+          className="input"
+          type="date"
+          style={{ flex: "0 0 140px" }}
+          value={filters.date_from || ""}
+          onChange={(e) =>
+            setFilters({ date_from: e.target.value || undefined, page: 1 })
+          }
+          placeholder="From"
+          title="Filter from date"
+        />
+        <input
+          className="input"
+          type="date"
+          style={{ flex: "0 0 140px" }}
+          value={filters.date_to || ""}
+          onChange={(e) =>
+            setFilters({ date_to: e.target.value || undefined, page: 1 })
+          }
+          placeholder="To"
+          title="Filter to date"
+        />
+        <select
+          className="input"
           style={{ flex: "0 0 120px" }}
           value={filters.page_size}
           onChange={(e) => setFilters({ page_size: Number(e.target.value) })}
@@ -438,6 +484,13 @@ export default function DashboardPage() {
             </option>
           ))}
         </select>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => navigate("/analytics")}
+          title="View analytics"
+        >
+          <Zap size={12} /> Analytics
+        </button>
       </div>
 
       {/* Table */}
