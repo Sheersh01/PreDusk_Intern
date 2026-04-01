@@ -56,6 +56,7 @@ def test_extract_structured_returns_all_fields():
     assert "char_count" in result
     assert "file_metadata" in result
     assert "content_checksum" in result
+    assert "field_confidence" in result
 
 
 def test_extract_structured_title_is_first_line():
@@ -89,6 +90,32 @@ def test_extract_structured_word_count():
 def test_checksum_is_md5():
     result = _extract_structured_data("hello", "test.txt", 5, ".txt")
     assert len(result["content_checksum"]) == 32  # MD5 hex length
+
+
+def test_extract_structured_resume_fields():
+    text = (
+        "Sheersh Saxena\n"
+        "Email: saxenasheersh1@gmail.com\n"
+        "Phone: +91 7458902737\n"
+        "Location: Nagpur, India\n"
+        "Portfolio: https://sheersh.dev\n"
+        "LinkedIn: www.linkedin.com/in/sheersh\n"
+        "Skills: React, Node, TypeScript, Docker\n"
+        "Experience: 3 years in full-stack development\n"
+        "B.Tech in Computer Science, XYZ University\n"
+    )
+
+    result = _extract_structured_data(text, "resume.pdf", 8192, ".pdf")
+
+    assert "saxenasheersh1@gmail.com" in result["emails"]
+    assert any("7458902737" in p for p in result["phone_numbers"])
+    assert any("sheersh.dev" in u for u in result["links"])
+    assert "react" in result["skills"]
+    assert result["experience_years"] == 3
+    assert any("b.tech" in line.lower() for line in result["education"])
+    assert result["location"] in ("Nagpur, India", "Nagpur")
+    assert isinstance(result["field_confidence"], dict)
+    assert result["field_confidence"].get("emails", 0) > 0
 
 
 # ── Unit: category inference ──────────────────────────────────────────────────

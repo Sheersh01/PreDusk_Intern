@@ -1,4 +1,9 @@
-export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'finalized';
+export type JobStatus =
+  | "queued"
+  | "processing"
+  | "completed"
+  | "failed"
+  | "finalized";
 
 export interface DocumentRecord {
   id: string;
@@ -37,6 +42,7 @@ export interface ExtractedData {
   content_checksum?: string;
   extraction_timestamp?: string;
   processing_version?: string;
+  field_confidence?: Record<string, number>;
   [key: string]: unknown;
 }
 
@@ -105,8 +111,8 @@ export interface SSEProgressEvent {
 export interface ListFilters {
   page: number;
   page_size: number;
-  status?: JobStatus | '';
+  status?: JobStatus | "";
   search?: string;
   sort_by: string;
-  sort_dir: 'asc' | 'desc';
+  sort_dir: "asc" | "desc";
 }

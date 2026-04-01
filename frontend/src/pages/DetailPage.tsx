@@ -38,6 +38,7 @@ function EditableField({
   label,
   icon,
   value,
+  confidence,
   onChange,
   multiline,
   tags,
@@ -45,6 +46,7 @@ function EditableField({
   label: string;
   icon: React.ReactNode;
   value: string | string[] | number | undefined;
+  confidence?: number;
   onChange: (v: string | string[]) => void;
   multiline?: boolean;
   tags?: boolean;
@@ -86,6 +88,25 @@ function EditableField({
       >
         <span style={{ color: "var(--text-3)" }}>{icon}</span>
         <SectionLabel>{label}</SectionLabel>
+        {typeof confidence === "number" && (
+          <span
+            title={`Confidence: ${Math.round(confidence * 100)}%`}
+            style={{
+              marginLeft: "auto",
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              color:
+                confidence < 0.5
+                  ? "var(--red)"
+                  : confidence < 0.7
+                    ? "var(--yellow)"
+                    : "var(--accent)",
+              letterSpacing: "0.04em",
+            }}
+          >
+            {Math.round(confidence * 100)}%
+          </span>
+        )}
       </div>
       {editing ? (
         <div style={{ display: "flex", gap: 6 }}>
@@ -363,6 +384,8 @@ export default function DetailPage() {
   const doc = job.document;
   const canEdit = ["completed", "finalized"].includes(job.status);
   const fileMeta = draftData?.file_metadata;
+  const fieldConfidence =
+    (draftData?.field_confidence as Record<string, number> | undefined) ?? {};
   const extraFieldEntries = Object.entries(draftData ?? {}).filter(
     ([key]) =>
       ![
@@ -376,6 +399,7 @@ export default function DetailPage() {
         "content_checksum",
         "extraction_timestamp",
         "processing_version",
+        "field_confidence",
       ].includes(key),
   );
 
@@ -596,18 +620,21 @@ export default function DetailPage() {
                 label="Title"
                 icon={<FileText size={12} />}
                 value={draftData.title}
+                confidence={fieldConfidence.title}
                 onChange={(v) => updateField("title", v)}
               />
               <EditableField
                 label="Category"
                 icon={<Tag size={12} />}
                 value={draftData.category}
+                confidence={fieldConfidence.category}
                 onChange={(v) => updateField("category", v)}
               />
               <EditableField
                 label="Summary"
                 icon={<AlignLeft size={12} />}
                 value={draftData.summary}
+                confidence={fieldConfidence.summary}
                 onChange={(v) => updateField("summary", v)}
                 multiline
               />
@@ -615,6 +642,7 @@ export default function DetailPage() {
                 label="Keywords"
                 icon={<List size={12} />}
                 value={draftData.keywords}
+                confidence={fieldConfidence.keywords}
                 onChange={(v) => updateField("keywords", v)}
                 tags
               />
