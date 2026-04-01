@@ -4,6 +4,7 @@ API routes delegate to this layer; no DB code in routes.
 """
 
 import csv
+import io
 import json
 import uuid
 from uuid import UUID
@@ -332,7 +333,15 @@ async def export_jobs_csv(
     writer.writeheader()
     for rec in records:
         flat = rec.copy()
-        flat["keywords"] = ", ".join(rec.get("keywords") or [])
+        keywords = rec.get("keywords")
+        if isinstance(keywords, list):
+            flat["keywords"] = ", ".join(str(k) for k in keywords)
+        elif isinstance(keywords, str):
+            flat["keywords"] = keywords
+        elif keywords is None:
+            flat["keywords"] = ""
+        else:
+            flat["keywords"] = str(keywords)
         writer.writerow(flat)
     return output.getvalue()
 

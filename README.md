@@ -14,17 +14,21 @@ Suggested walkthrough: upload -> live progress -> detail review -> edit -> final
 
 ## Tech Stack
 
-| Layer              | Technology                   |
-| ------------------ | ---------------------------- |
-| Frontend           | React 18 + Vite + TypeScript |
-| Backend            | Python 3.11 + FastAPI        |
-| Database           | PostgreSQL 15                |
-| Background workers | Celery 5                     |
-| Broker / Pub-Sub   | Redis 7                      |
-| Progress streaming | Server-Sent Events (SSE)     |
-| State management   | Zustand                      |
-| ORM                | SQLAlchemy 2 (async)         |
-| Containerisation   | Docker Compose               |
+| Layer              | Technology                                        |
+| ------------------ | ------------------------------------------------- |
+| Frontend           | React 18 + Vite + TypeScript                      |
+| Frontend Routing   | React Router 6                                    |
+| Frontend UI        | Lucide React Icons, react-dropzone                |
+| Frontend State     | Zustand                                           |
+| Backend            | Python 3.11 + FastAPI                             |
+| Database           | PostgreSQL 15                                     |
+| Background workers | Celery 5                                          |
+| Broker / Pub-Sub   | Redis 7                                           |
+| Progress streaming | Server-Sent Events (SSE)                          |
+| ORM                | SQLAlchemy 2 (async) + asyncpg                    |
+| File Storage       | Cloudinary (CDN) + Local filesystem (fallback)    |
+| Document parsing   | PyMuPDF (PDF), python-magic (file type detection) |
+| Containerisation   | Docker Compose                                    |
 
 ---
 
@@ -35,30 +39,46 @@ Suggested walkthrough: upload -> live progress -> detail review -> edit -> final
 │                        React + Vite (5173)                       │
 │  UploadPage  │  DashboardPage  │  DetailPage                     │
 │     SSE client (EventSource)  │  Axios REST client               │
+│       react-router-dom for routing & navigation                  │
 └───────────────────────┬─────────────────────────────────────────┘
                         │  HTTP / SSE
 ┌───────────────────────▼─────────────────────────────────────────┐
 │                     FastAPI  (8000)                              │
 │  POST /upload    GET /jobs    GET /jobs/:id/progress  (SSE)      │
 │  PATCH /review   POST /finalize   POST /retry   GET /export      │
+│  GET /health                                                     │
 │                                                                  │
 │  ┌──────────────┐   ┌──────────────┐   ┌──────────────────────┐ │
 │  │  API Routes  │ → │Service Layer │ → │  PostgreSQL (5432)   │ │
 │  └──────────────┘   └──────────────┘   └──────────────────────┘ │
 │           │                                                      │
+│  ├→ Upload to Cloudinary (if configured)                         │
+│  └→ Save locally as fallback                                     │
+│                                                                  │
 │  apply_async()  (Celery task dispatch)                           │
 └───────────┬─────────────────────────────────────────────────────┘
             │  Redis broker (DB 1)
 ┌───────────▼─────────────────────────────────────────────────────┐
-│                   Celery Worker                                  │
+│                   Celery Worker  (concurrency=4)                 │
 │  process_document task                                           │
-│  Stage 1: document_received                                      │
-│  Stage 2: parsing_started → extract raw text                     │
-│  Stage 3: parsing_completed                                      │
-│  Stage 4: extraction_started → build structured fields           │
-│  Stage 5: extraction_completed                                   │
-│  Stage 6: final_result_stored → persist to PostgreSQL            │
-│  Stage 7: job_completed / job_failed                             │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │ Step 1: Acquire file (Cloudinary or local fallback)      │   │
+│  │  ├→ Try Cloudinary download (if URL exists)              │   │
+│  │  ├→ Fallback to signed Cloudinary URL (if 401/403)       │   │
+│  │  └→ Fallback to /uploads directory if Cloudinary fails   │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  Stage 1: document_received          (5%)                        │
+│  Stage 2: parsing_started            (15%)                       │
+│           → extract raw text (PDF/TXT/CSV/JSON/MD)              │
+│  Stage 3: parsing_completed          (35%)                       │
+│  Stage 4: extraction_started         (50%)                       │
+│           → build structured fields (title, keywords, etc.)      │
+│  Stage 5: extraction_completed       (75%)                       │
+│  Stage 6: final_result_stored        (90%)                       │
+│           → persist to PostgreSQL                                │
+│  Stage 7: job_completed / job_failed (100% or ERR)               │
 │           │                                                      │
 │  publish_progress_sync() → Redis Pub/Sub (DB 0)                  │
 └───────────┬─────────────────────────────────────────────────────┘
@@ -71,7 +91,9 @@ Suggested walkthrough: upload -> live progress -> detail review -> edit -> final
 
 ### Key design decisions
 
-- **No processing in request handlers.** Upload endpoint saves the file, creates DB records, and calls `apply_async()`. The response returns immediately with job metadata.
+- **No processing in request handlers.** Upload endpoint saves the file locally, uploads to Cloudinary (if configured), creates DB records, and calls `apply_async()`. The response returns immediately with job metadata.
+- **Dual-storage strategy.** Files are stored on Cloudinary for scalability and CDN delivery. Local storage (`/uploads`) serves as a fallback when Cloudinary is unreachable or unconfigured, ensuring resilience.
+- **Dynamic Cloudinary retrieval.** Workers first attempt to download from Cloudinary URL; if delivery is restricted (401/403), they try signed URLs. If both fail, they fall back to the local copy.
 - **Redis Pub/Sub for decoupled progress events.** Workers publish to `job_progress:{job_id}`; FastAPI SSE handlers subscribe per-job. A `job_status:{job_id}` key is also written as a polling fallback.
 - **SSE over WebSockets.** SSE is simpler, HTTP/1.1 compatible, and sufficient for one-directional progress streaming. No upgrade handshake needed.
 - **Sync DB session in Celery, async in FastAPI.** Celery workers use a psycopg2-backed sync engine; FastAPI uses asyncpg. Both share the same PostgreSQL instance.
@@ -213,14 +235,74 @@ npm run dev
 #### Environment variables (backend `.env`)
 
 ```env
+# Database
 DATABASE_URL=postgresql+asyncpg://docflow:docflow_secret@localhost:5432/docflow_db
+DATABASE_URL_SYNC=postgresql+psycopg2://docflow:docflow_secret@localhost:5432/docflow_db
+
+# Redis
 REDIS_URL=redis://localhost:6379/0
 CELERY_BROKER_URL=redis://localhost:6379/1
 CELERY_RESULT_BACKEND=redis://localhost:6379/2
+
+# File storage
 UPLOAD_DIR=./uploads
 MAX_FILE_SIZE_MB=50
+ALLOWED_EXTENSIONS=[.pdf, .txt, .docx, .csv, .json, .md]
+
+# Cloudinary (optional, but recommended for production)
+# Leave empty to use local storage only
+USE_CLOUDINARY=true
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+
+# App
 DEBUG=true
+CORS_ORIGINS=["http://localhost:5173", "http://localhost:3000"]
 ```
+
+---
+
+## File Storage & Cloudinary Configuration
+
+DocFlow supports two storage modes:
+
+### Local Storage Only (Default)
+
+To use local filesystem storage without Cloudinary:
+
+```env
+USE_CLOUDINARY=false
+UPLOAD_DIR=./uploads
+MAX_FILE_SIZE_MB=50
+```
+
+Files are saved to `./uploads` and processed from there. This is ideal for development and small deployments.
+
+### Cloudinary + Local Fallback (Recommended for Production)
+
+To enable Cloudinary as the primary storage with local fallback:
+
+```env
+USE_CLOUDINARY=true
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+UPLOAD_DIR=./uploads
+```
+
+**How it works:**
+
+1. **Upload phase:** File is saved locally AND uploaded to Cloudinary (generates a CDN URL).
+2. **Processing phase:** Worker downloads from Cloudinary URL first. If delivery is restricted (401/403), it tries a signed URL. If both fail, it falls back to the local copy.
+3. **Resilience:** Local storage ensures that even if Cloudinary is unavailable or unreachable, processing continues.
+
+**Getting Cloudinary credentials:**
+
+1. Sign up at [cloudinary.com](https://cloudinary.com)
+2. Go to Dashboard → Settings
+3. Copy your **Cloud Name**, **API Key**, and **API Secret**
+4. Set environment variables with these values
 
 ---
 
@@ -234,11 +316,13 @@ pytest tests/ -v
 
 The test suite covers:
 
-- Text extraction for `.txt`, `.json`, `.csv` formats
+- Text extraction for `.txt`, `.json`, `.csv`, `.pdf` formats
 - Missing file handling
 - Structured data field extraction (title, keywords, word count, checksum)
 - Category inference heuristics
 - Redis Pub/Sub publish (mocked)
+- File upload and validation
+- Job state transitions
 
 ---
 
@@ -312,7 +396,8 @@ SSE behavior notes:
 ## Assumptions
 
 - Processing logic is heuristic (keyword frequency, line-based title extraction). The architecture is production-grade; the NLP is intentionally simple.
-- File storage is local filesystem (`/uploads`). In production, swap for S3/GCS via a storage abstraction layer.
+- **File storage uses Cloudinary** for scalability and CDN delivery when configured. Local storage (`/uploads`) is a fallback. `USE_CLOUDINARY=false` disables Cloudinary and uses local storage only.
+- **Supported formats**: PDF (via PyMuPDF), TXT, Markdown, CSV, JSON, and DOCX (mocked—no actual parsing, requires `python-docx` to implement).
 - No authentication. Adding JWT or OAuth2 would layer cleanly onto the existing FastAPI routes.
 - A single Celery queue (`documents`) is used. For scale, separate queues per priority or document type would be straightforward.
 - SSE connections auto-close on terminal job states. Clients reconnect if they navigate back to a processing job.
@@ -323,17 +408,21 @@ SSE behavior notes:
 
 | Decision                                         | Rationale                                                                                                                         |
 | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| Cloudinary + Local storage                       | Cloudinary provides CDN and scalability; local storage ensures resilience. Fallback prevents uploads from failing without backups |
 | SSE over WebSocket                               | Simpler, stateless, works through HTTP proxies. Sufficient for unidirectional progress.                                           |
 | Sync SQLAlchemy in Celery                        | Celery workers run in their own process/thread pool without an async event loop. Using sync psycopg2 avoids event loop conflicts. |
 | Redis dual-role (broker + pubsub)                | Reduces infrastructure surface area. Separate DBs (0, 1, 2) prevent key collisions.                                               |
 | `reviewed_data` pre-filled from `extracted_data` | User sees extracted results immediately on the review screen without having to copy them manually.                                |
 | DB-persisted events + Redis Pub/Sub              | Events in DB give permanent audit trail. Redis gives low-latency live streaming. Both serve different consumers.                  |
+| Heuristic text extraction over ML                | Fast, deterministic, no ML model overhead. For production NLP, integrate LLM APIs (OpenAI, Anthropic, etc.).                      |
 
 ---
 
 ## Known Limitations
 
-- DOCX parsing is mocked (requires `python-docx`, not included to keep deps lean).
+- **DOCX parsing is mocked** (returns placeholder text). Full DOCX support requires installing and integrating `python-docx`, which is not included to keep dependencies lean.
+- **Cloudinary dependency:** If `USE_CLOUDINARY=true` but credentials are missing/invalid, the upload fails. Set `USE_CLOUDINARY=false` or provide valid credentials.
+- **Signed URL generation:** When Cloudinary enforces delivery restrictions (401/403), fallback retrieval requires the stored local file. Network-only storage (no local copy) will fail in that scenario.
 - No file deduplication (same file can be uploaded twice, creating separate jobs).
 - SSE reconnection on network drop is handled by the browser's native EventSource retry, but no explicit resume-from-offset is implemented.
 - Default export returns finalized jobs only; `include_completed=true` can broaden the scope.

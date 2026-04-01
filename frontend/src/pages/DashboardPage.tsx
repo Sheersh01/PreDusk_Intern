@@ -21,6 +21,7 @@ import {
 import { useSSEProgress } from "../hooks/useSSEProgress";
 import { useJobStore } from "../store/jobStore";
 import { formatDistanceToNow } from "date-fns";
+import { parseApiDate } from "../lib/datetime";
 import type { JobStatus, ProcessingJobSummary } from "../types";
 
 const STATUS_OPTIONS: { value: string; label: string }[] = [
@@ -125,7 +126,9 @@ function LiveJobRow({
             color: "var(--text-3)",
           }}
         >
-          {formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}
+          {formatDistanceToNow(parseApiDate(job.created_at), {
+            addSuffix: true,
+          })}
         </span>
       </td>
 

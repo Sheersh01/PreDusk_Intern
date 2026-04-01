@@ -30,6 +30,7 @@ import {
 } from "../components/ui";
 import { useSSEProgress } from "../hooks/useSSEProgress";
 import { formatDistanceToNow, format } from "date-fns";
+import { parseApiDate } from "../lib/datetime";
 import type { ProcessingJob, ExtractedData } from "../types";
 
 // ── Editable field component ──────────────────────────────────────────────────
@@ -246,7 +247,7 @@ function EventTimeline({ events }: { events: ProcessingJob["events"] }) {
                 fontFamily: "var(--font-mono)",
               }}
             >
-              {format(new Date(ev.created_at), "HH:mm:ss.SSS")}
+              {format(parseApiDate(ev.created_at), "HH:mm:ss.SSS")}
             </div>
           </div>
         </div>
@@ -410,7 +411,7 @@ export default function DetailPage() {
                 marginLeft: "auto",
               }}
             >
-              {formatDistanceToNow(new Date(job.created_at), {
+              {formatDistanceToNow(parseApiDate(job.created_at), {
                 addSuffix: true,
               })}
             </span>
@@ -688,12 +689,12 @@ export default function DetailPage() {
               },
               {
                 label: "Created",
-                val: format(new Date(job.created_at), "MMM d, HH:mm"),
+                val: format(parseApiDate(job.created_at), "MMM d, HH:mm"),
               },
               {
                 label: "Completed",
                 val: job.completed_at
-                  ? format(new Date(job.completed_at), "MMM d, HH:mm")
+                  ? format(parseApiDate(job.completed_at), "MMM d, HH:mm")
                   : "—",
               },
             ].map((row) => (
