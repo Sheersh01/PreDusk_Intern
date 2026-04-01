@@ -21,7 +21,7 @@ function Topbar() {
   return (
     <header className="topbar">
       <NavLink to="/" className="topbar-logo">
-        DOC<span>/</span>FLOW
+        EXTRACT<span>/</span>HUB
       </NavLink>
 
       {authed && (

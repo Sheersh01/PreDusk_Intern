@@ -1,6 +1,6 @@
-const AUTH_KEY = "docflow_dummy_auth";
+const AUTH_KEY = "extracthub_dummy_auth";
 const DEFAULT_SESSION_HOURS = 8;
-const SESSION_HOURS_KEY = "docflow_dummy_session_hours";
+const SESSION_HOURS_KEY = "extracthub_dummy_session_hours";
 
 type StoredAuth = {
   username: string;

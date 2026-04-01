@@ -1,4 +1,4 @@
-# DocFlow — Async Document Processing Workflow System
+# ExtractHub — Async Document Processing Workflow System
 
 A production-style full-stack application for uploading documents, processing them asynchronously through a multi-stage pipeline, tracking real-time progress, reviewing and editing extracted output, and exporting finalized results.
 
@@ -28,6 +28,7 @@ Suggested walkthrough: upload -> live progress -> detail review -> edit -> final
 | Progress streaming | Server-Sent Events (SSE)                          |
 | ORM                | SQLAlchemy 2 (async) + asyncpg                    |
 | File Storage       | Cloudinary (CDN) + Local filesystem (fallback)    |
+| Deployment         | Docker Compose, Vercel (frontend)                 |
 | Document parsing   | PyMuPDF (PDF), python-magic (file type detection) |
 | Containerisation   | Docker Compose                                    |
 
@@ -171,7 +172,7 @@ docflow/
 
 ```bash
 # Clone / enter the repo
-cd docflow
+cd extracthub
 
 # Build and start all services
 docker compose up --build
@@ -201,9 +202,9 @@ docker compose down -v       # also remove data volumes
 
 ```bash
 # PostgreSQL
-createdb docflow_db
+createdb extracthub_db
 # or via psql:
-psql -c "CREATE USER docflow WITH PASSWORD 'docflow_secret'; CREATE DATABASE docflow_db OWNER docflow;"
+psql -c "CREATE USER extracthub WITH PASSWORD 'extracthub_secret'; CREATE DATABASE extracthub_db OWNER extracthub;"
 
 # Redis
 redis-server
@@ -241,8 +242,8 @@ npm run dev
 
 ```env
 # Database
-DATABASE_URL=postgresql+asyncpg://docflow:docflow_secret@localhost:5432/docflow_db
-DATABASE_URL_SYNC=postgresql+psycopg2://docflow:docflow_secret@localhost:5432/docflow_db
+DATABASE_URL=postgresql+asyncpg://extracthub:extracthub_secret@localhost:5432/extracthub_db
+DATABASE_URL_SYNC=postgresql+psycopg2://extracthub:extracthub_secret@localhost:5432/extracthub_db
 
 # Redis
 REDIS_URL=redis://localhost:6379/0
@@ -264,6 +265,10 @@ CLOUDINARY_API_SECRET=your_api_secret
 # App
 DEBUG=true
 CORS_ORIGINS=["http://localhost:5173", "http://localhost:3000"]
+
+# ExtractHub-specific settings
+APP_NAME=ExtractHub
+APP_VERSION=1.0.0
 ```
 
 ---
@@ -333,10 +338,10 @@ The test suite covers:
 
 ## Dummy Auth (Frontend Only)
 
-The app includes a lightweight demo authentication flow on the frontend.
+ExtractHub includes a lightweight demo authentication flow on the frontend.
 
 - `/login` page accepts any username (dummy login).
-- Protected routes: `/`, `/upload`, `/jobs/:jobId`.
+- Protected routes: `/`, `/upload`, `/jobs/:jobId`, `/analytics`.
 - Logout button is available in the top bar when logged in.
 - Sessions are stored in localStorage and expire automatically.
 
@@ -349,7 +354,7 @@ The app includes a lightweight demo authentication flow on the frontend.
 To override session duration for local testing:
 
 ```js
-localStorage.setItem("docflow_dummy_session_hours", "2"); // 2-hour session
+localStorage.setItem("extracthub_dummy_session_hours", "2"); // 2-hour session
 ```
 
 ### Environment badge on login screen
@@ -475,6 +480,10 @@ SSE behavior notes:
 - [x] Clean deployment-ready structure
 - [x] Dummy login/logout with protected routes
 - [x] Session expiry with auto-logout
+- [x] Advanced search & filter dashboard
+- [x] Real-time analytics dashboard (skills, categories, experience, locations)
+- [x] Confidence scoring for extracted fields
+- [x] Vercel deployment configuration (robots.txt, sitemap.xml, vercel.json)
 
 ---
 
