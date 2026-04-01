@@ -20,6 +20,7 @@ Suggested walkthrough: upload -> live progress -> detail review -> edit -> final
 | Frontend Routing   | React Router 6                                    |
 | Frontend UI        | Lucide React Icons, react-dropzone                |
 | Frontend State     | Zustand                                           |
+| Frontend Auth      | Dummy auth (localStorage) + route guards          |
 | Backend            | Python 3.11 + FastAPI                             |
 | Database           | PostgreSQL 15                                     |
 | Background workers | Celery 5                                          |
@@ -140,9 +141,12 @@ docflow/
     ├── vite.config.ts
     └── src/
         ├── main.tsx
-        ├── App.tsx                 # Routes + Topbar
+    ├── App.tsx                 # Routes + Topbar + auth-aware navigation
         ├── index.css               # Design system
         ├── types/index.ts          # Shared TypeScript types
+    ├── auth/
+    │   ├── auth.ts             # Dummy auth (login/logout/session expiry)
+    │   └── RequireAuth.tsx     # Protected route wrapper
         ├── lib/api.ts              # Axios API client
         ├── hooks/
         │   └── useSSEProgress.ts   # EventSource hook
@@ -151,6 +155,7 @@ docflow/
         ├── components/ui/
         │   └── index.tsx           # StatusBadge, ProgressBar, Spinner, etc.
         └── pages/
+      ├── LoginPage.tsx
             ├── UploadPage.tsx
             ├── DashboardPage.tsx
             └── DetailPage.tsx
@@ -326,6 +331,36 @@ The test suite covers:
 
 ---
 
+## Dummy Auth (Frontend Only)
+
+The app includes a lightweight demo authentication flow on the frontend.
+
+- `/login` page accepts any username (dummy login).
+- Protected routes: `/`, `/upload`, `/jobs/:jobId`.
+- Logout button is available in the top bar when logged in.
+- Sessions are stored in localStorage and expire automatically.
+
+### Session expiry
+
+- Default expiry: **8 hours**.
+- Expiry is checked whenever auth state is read.
+- If expired, the session is removed and protected routes redirect to `/login`.
+
+To override session duration for local testing:
+
+```js
+localStorage.setItem("docflow_dummy_session_hours", "2"); // 2-hour session
+```
+
+### Environment badge on login screen
+
+Login screen shows an auth environment badge:
+
+- `Local Mode` on `localhost` / `127.0.0.1`
+- `Demo Mode` on deployed hosts
+
+---
+
 ## API Reference
 
 | Method   | Endpoint                     | Description                                                        |
@@ -398,7 +433,7 @@ SSE behavior notes:
 - Processing logic is heuristic (keyword frequency, line-based title extraction). The architecture is production-grade; the NLP is intentionally simple.
 - **File storage uses Cloudinary** for scalability and CDN delivery when configured. Local storage (`/uploads`) is a fallback. `USE_CLOUDINARY=false` disables Cloudinary and uses local storage only.
 - **Supported formats**: PDF (via PyMuPDF), TXT, Markdown, CSV, JSON, and DOCX (mocked—no actual parsing, requires `python-docx` to implement).
-- No authentication. Adding JWT or OAuth2 would layer cleanly onto the existing FastAPI routes.
+- Authentication is currently frontend-only dummy auth for demo UX. Backend APIs are not protected by JWT/OAuth yet.
 - A single Celery queue (`documents`) is used. For scale, separate queues per priority or document type would be straightforward.
 - SSE connections auto-close on terminal job states. Clients reconnect if they navigate back to a processing job.
 
@@ -427,6 +462,7 @@ SSE behavior notes:
 - SSE reconnection on network drop is handled by the browser's native EventSource retry, but no explicit resume-from-offset is implemented.
 - Default export returns finalized jobs only; `include_completed=true` can broaden the scope.
 - No rate limiting on upload endpoint.
+- Dummy auth is client-side only (localStorage). It is not security-grade authentication.
 
 ---
 
@@ -437,6 +473,8 @@ SSE behavior notes:
 - [x] Idempotent retry handling (retry_count + max_retries guard)
 - [x] Polling fallback (`/status` endpoint via Redis key)
 - [x] Clean deployment-ready structure
+- [x] Dummy login/logout with protected routes
+- [x] Session expiry with auto-logout
 
 ---
 

@@ -362,6 +362,29 @@ export default function DetailPage() {
 
   const doc = job.document;
   const canEdit = ["completed", "finalized"].includes(job.status);
+  const fileMeta = draftData?.file_metadata;
+  const extraFieldEntries = Object.entries(draftData ?? {}).filter(
+    ([key]) =>
+      ![
+        "title",
+        "category",
+        "summary",
+        "keywords",
+        "word_count",
+        "char_count",
+        "file_metadata",
+        "content_checksum",
+        "extraction_timestamp",
+        "processing_version",
+      ].includes(key),
+  );
+
+  const renderExtraValue = (value: unknown) => {
+    if (value === null || value === undefined) return "-";
+    if (Array.isArray(value)) return value.join(", ");
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value);
+  };
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto" }} className="fade-in">
@@ -641,6 +664,131 @@ export default function DetailPage() {
                   </div>
                 ))}
               </div>
+
+              {/* Extended metadata */}
+              <div style={{ marginTop: 18, marginBottom: 10 }}>
+                <SectionLabel>Extraction Metadata</SectionLabel>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 8,
+                    marginTop: 8,
+                  }}
+                >
+                  {[
+                    {
+                      label: "Processing version",
+                      val: draftData.processing_version ?? "-",
+                    },
+                    {
+                      label: "Extracted at",
+                      val: draftData.extraction_timestamp
+                        ? format(
+                            parseApiDate(draftData.extraction_timestamp),
+                            "MMM d, HH:mm:ss",
+                          )
+                        : "-",
+                    },
+                    {
+                      label: "Checksum",
+                      val: draftData.content_checksum ?? "-",
+                    },
+                    {
+                      label: "Source file",
+                      val: fileMeta?.filename ?? doc?.original_filename ?? "-",
+                    },
+                    {
+                      label: "File size",
+                      val:
+                        fileMeta?.file_size_bytes != null
+                          ? formatBytes(fileMeta.file_size_bytes)
+                          : doc
+                            ? formatBytes(doc.file_size)
+                            : "-",
+                    },
+                    {
+                      label: "File type",
+                      val: fileMeta?.file_type ?? doc?.file_type ?? "-",
+                    },
+                  ].map((item) => (
+                    <div
+                      key={item.label}
+                      style={{
+                        border: "1px solid var(--border)",
+                        background: "var(--bg-2)",
+                        borderRadius: "var(--radius)",
+                        padding: "8px 10px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: "var(--text-3)",
+                          fontFamily: "var(--font-mono)",
+                          letterSpacing: "0.08em",
+                        }}
+                      >
+                        {item.label.toUpperCase()}
+                      </div>
+                      <div
+                        className="truncate"
+                        title={String(item.val)}
+                        style={{
+                          marginTop: 2,
+                          fontSize: 12,
+                          color: "var(--text-2)",
+                          fontFamily: "var(--font-mono)",
+                        }}
+                      >
+                        {item.val}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Dynamically show any extra extracted keys */}
+              {extraFieldEntries.length > 0 && (
+                <div style={{ marginTop: 8, marginBottom: 12 }}>
+                  <SectionLabel>Additional Extracted Fields</SectionLabel>
+                  <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                    {extraFieldEntries.map(([key, value]) => (
+                      <div
+                        key={key}
+                        style={{
+                          border: "1px solid var(--border)",
+                          background: "var(--bg-2)",
+                          borderRadius: "var(--radius)",
+                          padding: "8px 10px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 10,
+                            color: "var(--text-3)",
+                            fontFamily: "var(--font-mono)",
+                            letterSpacing: "0.08em",
+                          }}
+                        >
+                          {key.replace(/_/g, " ").toUpperCase()}
+                        </div>
+                        <div
+                          style={{
+                            marginTop: 3,
+                            fontSize: 12,
+                            color: "var(--text-2)",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                          }}
+                        >
+                          {renderExtraValue(value)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="card" style={{ padding: 20 }}>
