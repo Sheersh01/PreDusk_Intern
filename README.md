@@ -6,7 +6,7 @@ A production-style full-stack application for uploading documents, processing th
 
 ## Demo
 
-Demo video (3–5 min): `ADD_YOUR_VIDEO_LINK_HERE`
+Demo video (3–5 min): `https://drive.google.com/file/d/1noqwp-dS56ag629-HK0_VnHEhGptCLeJ/view?usp=sharing`
 
 Suggested walkthrough: upload -> live progress -> detail review -> edit -> finalize -> export.
 
