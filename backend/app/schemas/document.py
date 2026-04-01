@@ -1,8 +1,21 @@
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 from app.models.document import JobStatus
+
+
+def _serialize_datetime_utc(value: datetime) -> str:
+    """Serialize datetimes as ISO8601 with timezone; assume UTC for naive values."""
+    dt = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
+class APIModel(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_encoders={datetime: _serialize_datetime_utc},
+    )
 
 
 # ─── Document Schemas ────────────────────────────────────────────────────────
@@ -15,8 +28,7 @@ class DocumentBase(BaseModel):
 
 
 class DocumentRead(DocumentBase):
-    model_config = ConfigDict(from_attributes=True)
-
+    model_config = APIModel.model_config
     id: UUID
     filename: str
     file_url: Optional[str] = None  # Cloudinary URL
@@ -26,8 +38,7 @@ class DocumentRead(DocumentBase):
 
 # ─── Job Event Schemas ────────────────────────────────────────────────────────
 
-class JobEventRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class JobEventRead(APIModel):
 
     id: UUID
     job_id: UUID
@@ -47,7 +58,7 @@ class ProcessingJobBase(BaseModel):
 
 
 class ProcessingJobRead(ProcessingJobBase):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = APIModel.model_config
 
     id: UUID
     document_id: UUID
@@ -67,7 +78,7 @@ class ProcessingJobRead(ProcessingJobBase):
 
 class ProcessingJobSummary(ProcessingJobBase):
     """Lighter version for list views"""
-    model_config = ConfigDict(from_attributes=True)
+    model_config = APIModel.model_config
 
     id: UUID
     document_id: UUID
